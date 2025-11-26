@@ -5,10 +5,12 @@
     <string name="text_autoriz">Авторизация</string>
     <string name="text_come_in">Войти</string>
     <string name="text_authorized">Регистрация</string>
-    <string name="text_geus">Войти как гость</string>
-    <string name="main_page">Главная страница</string>
+    <string name="text_guest">Войти как гость</string>
+    <string name="main_page">Товары</string>
     <string name="text_registration">Регистрация</string>
     <string name="hint_email">Email</string>
     <string name="email_check">Повторите email</string>
     <string name="password_check">Повторите пароль</string>
+    <string name="button_product">просмотреть</string>
+
 </resources>

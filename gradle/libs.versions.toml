@@ -10,6 +10,7 @@ junit = "4.13.2"
 junit-android = "1.1.5"
 espresso = "3.5.1"
 activity-version = "1.11.0"
+appcompat-version = "1.7.1"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "core-ktx" }
@@ -21,6 +22,7 @@ junit = { group = "junit", name = "junit", version.ref = "junit" }
 androidx-junit = { group = "androidx.test.ext", name = "junit", version.ref = "junit-android" }
 androidx-espresso-core = { group = "androidx.test.espresso", name = "espresso-core", version.ref = "espresso" }
 activity = { group = "androidx.activity", name = "activity", version.ref = "activity-version" }
+appcompat = { group = "androidx.appcompat", name = "appcompat", version.ref = "appcompat-version" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

@@ -1,11 +1,13 @@
 package com.example.test
 
 import android.content.Intent
+import android.net.ConnectivityManager
 import android.os.Bundle
 import android.widget.Button
 import android.widget.EditText
 import android.widget.Toast
 import androidx.activity.enableEdgeToEdge
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
@@ -46,7 +48,12 @@ class Auth : AppCompatActivity() {
             val password = userPassword.text.toString().trim()
 
             if (login.isEmpty() || password.isEmpty()) {
-                Toast.makeText(this, "Заполните все поля", Toast.LENGTH_SHORT).show()
+                showAlertDialog("Ошибка", "Заполните все поля")
+                return@setOnClickListener
+            }
+
+            if (!isNetworkAvailable()) {
+                showAlertDialog("Ошибка сети", "Проверьте подключение к интернету")
                 return@setOnClickListener
             }
 
@@ -57,8 +64,12 @@ class Auth : AppCompatActivity() {
     private fun loginUser(login: String, password: String) {
         val loginRequest = LoginRequest(login, password)
 
+        showLoading(true)
+
         RetrofitClient.apiService.loginUser(loginRequest).enqueue(object : Callback<LoginResponse> {
             override fun onResponse(call: Call<LoginResponse>, response: Response<LoginResponse>) {
+                showLoading(false)
+
                 if (response.isSuccessful) {
                     val loginResponse = response.body()
                     Toast.makeText(
@@ -67,27 +78,51 @@ class Auth : AppCompatActivity() {
                         Toast.LENGTH_LONG
                     ).show()
 
-                    // Переход на главный экран
                     val intent = Intent(this@Auth, Main::class.java)
                     startActivity(intent)
                     finish()
                 } else {
                     val errorMessage = when (response.code()) {
                         401 -> "Неверный логин или пароль"
+                        404 -> "Пользователь не найден"
                         500 -> "Ошибка сервера"
                         else -> "Ошибка входа: ${response.message()}"
                     }
-                    Toast.makeText(this@Auth, errorMessage, Toast.LENGTH_LONG).show()
+                    showAlertDialog("Ошибка входа", errorMessage)
                 }
             }
 
             override fun onFailure(call: Call<LoginResponse>, t: Throwable) {
-                Toast.makeText(
-                    this@Auth,
-                    "Ошибка сети: ${t.message}",
-                    Toast.LENGTH_LONG
-                ).show()
+                showLoading(false)
+                showAlertDialog("Ошибка сети", "Не удалось подключиться к серверу: ${t.message}")
             }
         })
+    }
+
+    private fun isNetworkAvailable(): Boolean {
+        val connectivityManager = getSystemService(ConnectivityManager::class.java)
+        val networkInfo = connectivityManager.activeNetworkInfo
+        return networkInfo != null && networkInfo.isConnected
+    }
+
+    private fun showAlertDialog(title: String, message: String) {
+        runOnUiThread {
+            AlertDialog.Builder(this@Auth)
+                .setTitle(title)
+                .setMessage(message)
+                .setPositiveButton("OK", null)
+                .create()
+                .show()
+        }
+    }
+
+    private fun showLoading(show: Boolean) {
+        // Здесь можно добавить ProgressBar если есть в layout
+        // findViewById<ProgressBar>(R.id.progressBar).visibility = if (show) View.VISIBLE else View.GONE
+        if (show) {
+            // Показать диалог загрузки
+        } else {
+            // Скрыть диалог загрузки
+        }
     }
 }

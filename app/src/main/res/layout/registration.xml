@@ -9,8 +9,6 @@
     android:background="#83C5BE"
     tools:context=".Registration">
 
-
-
     <TextView
         android:id="@+id/Auth_textview_auth"
         android:layout_width="wrap_content"
@@ -29,7 +27,7 @@
         android:layout_marginTop="70dp"
         android:background="@drawable/edittext_rounded_corners"
         android:hint="@string/hint_login"
-        android:inputType="textNoSuggestions"
+        android:inputType="text"
         android:maxLines="1"
         android:imeOptions="actionNext" />
 
@@ -55,7 +53,6 @@
         android:hint="@string/hint_password"
         android:inputType="textPassword" />
 
-
     <EditText
         android:id="@+id/Reg_editText_password_check"
         android:layout_width="200dp"
@@ -73,10 +70,9 @@
         android:layout_height="wrap_content"
         android:layout_gravity="center"
         android:layout_marginTop="20dp"
-        android:background="@drawable/button"
+        android:backgroundTint="#02838C"
         android:textSize="18sp"
-        android:text="@string/text_registration"
-        />
+        android:text="@string/text_registration" />
 
     <TextView
         android:id="@+id/Reg_TextView_Auto"
@@ -85,8 +81,6 @@
         android:layout_gravity="center"
         android:layout_marginTop="30dp"
         android:textSize="20sp"
-
         android:text="@string/text_autoriz" />
-
 
 </LinearLayout>

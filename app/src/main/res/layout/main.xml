@@ -4,21 +4,41 @@
     android:id="@+id/main"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="#83C5BE"
     android:orientation="vertical"
     tools:context=".Main">
 
 
     <TextView
-        android:id="@+id/Auth_textview_auth"
+        android:id="@+id/Main_Textview_product"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_gravity="center"
-        android:layout_marginTop="100dp"
+        android:layout_marginTop="50dp"
         android:fontFamily="@font/advent_pro_medium"
         android:text="@string/main_page"
         android:textSize="40sp" />
 
+    <SearchView
+        android:id="@+id/Main_SearchView"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_margin="16dp"
+        android:queryHint="Поиск товаров..."
+        android:background="@drawable/rounded_corners"/>
 
+    <ProgressBar
+        android:id="@+id/Main_progressBar"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center"
+        android:layout_marginTop="50dp"
+        android:visibility="gone" />
+
+    <androidx.recyclerview.widget.RecyclerView
+        android:id="@+id/Main_RecyclerView_product"
+        android:layout_marginHorizontal="20dp"
+        android:layout_marginVertical="20dp"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" />
 
 </LinearLayout>
