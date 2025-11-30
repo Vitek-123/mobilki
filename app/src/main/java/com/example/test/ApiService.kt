@@ -28,4 +28,7 @@ interface ApiService {
         @Query("limit") limit: Int = 50,
         @Query("search") search: String? = null
     ): Response<ProductsResponse>
+    
+    @GET("/products/{id}")
+    suspend fun getProductByIdSuspend(@Path("id") productId: Int): Response<ProductWithPricesResponse>
 }

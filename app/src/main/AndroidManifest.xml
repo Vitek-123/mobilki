@@ -26,6 +26,12 @@
             android:name=".Main"
             android:exported="false" />
         <activity
+            android:name=".ProductDetailActivity"
+            android:exported="false" />
+        <activity
+            android:name=".ShopComparisonActivity"
+            android:exported="false" />
+        <activity
             android:name=".Auth"
             android:exported="true">
             <intent-filter>

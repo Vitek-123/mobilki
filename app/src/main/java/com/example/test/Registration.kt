@@ -10,6 +10,8 @@ import androidx.activity.enableEdgeToEdge
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
+import com.google.gson.Gson
+import com.google.gson.JsonObject
 import retrofit2.Call
 import retrofit2.Callback
 import retrofit2.Response
@@ -25,6 +27,9 @@ class Registration : AppCompatActivity() {
             v.setPadding(systemBars.left, systemBars.top, systemBars.right, systemBars.bottom)
             insets
         }
+
+        // Инициализация RetrofitClient
+        RetrofitClient.initialize(this)
 
         val loginData: EditText = findViewById(R.id.Reg_editText_login)
         val emailData: EditText = findViewById(R.id.Reg_editText_email)
@@ -49,6 +54,29 @@ class Registration : AppCompatActivity() {
 
             if (login.isEmpty() || email.isEmpty() || password.isEmpty()) {
                 Toast.makeText(this, "Заполните все поля", Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
+
+            if (login.length < 3) {
+                Toast.makeText(this, "Логин должен содержать минимум 3 символа", Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
+
+            if (!android.util.Patterns.EMAIL_ADDRESS.matcher(email).matches()) {
+                Toast.makeText(this, "Введите корректный email адрес", Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
+
+            if (password.length < 4) {
+                Toast.makeText(this, "Пароль должен содержать минимум 4 символа", Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
+            
+            // Bcrypt имеет ограничение в 72 байта для пароля
+            // Проверяем только если пароль явно очень длинный (больше 100 символов)
+            // Для обычных паролей проверка будет на сервере
+            if (password.length > 100) {
+                Toast.makeText(this, "Пароль слишком длинный (максимум 100 символов)", Toast.LENGTH_SHORT).show()
                 return@setOnClickListener
             }
 
@@ -80,12 +108,45 @@ class Registration : AppCompatActivity() {
                     startActivity(intent)
                     finish()
                 } else {
-                    val errorMessage = when (response.code()) {
-                        400 -> "Пользователь с таким логином или почтой уже существует"
-                        500 -> "Ошибка сервера"
-                        else -> "Ошибка регистрации: ${response.message()}"
+                    // Пытаемся получить детальное сообщение об ошибке от сервера
+                    val errorMessage = try {
+                        val errorBody = response.errorBody()?.string()
+                        Log.e("Registration", "Registration failed: ${response.code()}, body: $errorBody")
+                        
+                        if (errorBody != null) {
+                            try {
+                                // Пытаемся распарсить JSON с деталями ошибки
+                                val gson = Gson()
+                                val jsonObject = gson.fromJson(errorBody, JsonObject::class.java)
+                                val detail = jsonObject.get("detail")?.asString
+                                
+                                if (detail != null) {
+                                    detail
+                                } else {
+                                    getDefaultErrorMessage(response.code())
+                                }
+                            } catch (e: Exception) {
+                                // Если не удалось распарсить JSON, ищем "detail" в тексте
+                                if (errorBody.contains("\"detail\"")) {
+                                    val detailStart = errorBody.indexOf("\"detail\":\"") + 10
+                                    val detailEnd = errorBody.indexOf("\"", detailStart)
+                                    if (detailStart > 9 && detailEnd > detailStart) {
+                                        errorBody.substring(detailStart, detailEnd)
+                                    } else {
+                                        getDefaultErrorMessage(response.code())
+                                    }
+                                } else {
+                                    getDefaultErrorMessage(response.code())
+                                }
+                            }
+                        } else {
+                            getDefaultErrorMessage(response.code())
+                        }
+                    } catch (e: Exception) {
+                        Log.e("Registration", "Error parsing error body: ${e.message}", e)
+                        getDefaultErrorMessage(response.code())
                     }
-                    Toast.makeText(this@Registration, errorMessage, Toast.LENGTH_SHORT).show()
+                    Toast.makeText(this@Registration, errorMessage, Toast.LENGTH_LONG).show()
                 }
             }
 
@@ -99,5 +160,14 @@ class Registration : AppCompatActivity() {
                 Log.d("Registration", "Detailed error: ${t.stackTraceToString()}")
             }
         })
+    }
+    
+    private fun getDefaultErrorMessage(code: Int): String {
+        return when (code) {
+            400 -> "Пользователь с таким логином или почтой уже существует"
+            500 -> "Ошибка сервера. Проверьте подключение к БД и логи сервера"
+            404 -> "Сервер не найден. Проверьте BASE_URL"
+            else -> "Ошибка регистрации (код: $code)"
+        }
     }
 }

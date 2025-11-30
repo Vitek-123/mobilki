@@ -1,8 +1,17 @@
 from sqlalchemy import create_engine
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
+import os
+from dotenv import load_dotenv
 
-sql_url_db = "mysql+pymysql://root:root@localhost:3306/project_mobilki_aviasales"
+# Загружаем переменные окружения из .env файла
+load_dotenv()
+
+# Получаем URL БД из переменных окружения, с fallback на значение по умолчанию
+sql_url_db = os.getenv(
+    "DATABASE_URL",
+    "mysql+pymysql://root:root@localhost:3306/project_mobilki_aviasales"
+)
 
 engine = create_engine(
     sql_url_db,

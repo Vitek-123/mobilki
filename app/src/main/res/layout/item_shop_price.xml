@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.cardview.widget.CardView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:id="@+id/cardView"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:layout_margin="8dp"
+    app:cardCornerRadius="12dp"
+    app:cardElevation="4dp"
+    app:cardBackgroundColor="#FFFFFF">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="16dp">
+
+        <!-- Бейдж "Самая дешевая" (будет виден только для первой цены) -->
+        <TextView
+            android:id="@+id/ShopPrice_textView_bestPrice"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="🏆 Самая дешевая цена"
+            android:textSize="12sp"
+            android:textStyle="bold"
+            android:textColor="#FFFFFF"
+            android:background="#4CAF50"
+            android:paddingHorizontal="12dp"
+            android:paddingVertical="6dp"
+            android:layout_marginBottom="8dp"
+            android:layout_gravity="end"
+            android:visibility="gone"
+            tools:visibility="visible" />
+
+        <!-- Название магазина -->
+        <TextView
+            android:id="@+id/ShopPrice_textView_shopName"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textSize="20sp"
+            android:textStyle="bold"
+            android:textColor="#02838C"
+            tools:text="DNS" />
+
+        <!-- Цена -->
+        <TextView
+            android:id="@+id/ShopPrice_textView_price"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:textSize="28sp"
+            android:textStyle="bold"
+            android:textColor="#000000"
+            tools:text="79 999 ₽" />
+
+        <!-- Дата обновления -->
+        <TextView
+            android:id="@+id/ShopPrice_textView_date"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:textSize="14sp"
+            android:textColor="#666666"
+            tools:text="Обновлено: 01.01.2024" />
+
+        <!-- Кнопка перехода в магазин -->
+        <Button
+            android:id="@+id/ShopPrice_button_open"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:text="Открыть в магазине"
+            android:background="@drawable/rounded_button" />
+
+    </LinearLayout>
+
+</androidx.cardview.widget.CardView>
+

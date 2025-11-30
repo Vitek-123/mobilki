@@ -21,6 +21,8 @@ import com.example.test.Main
 
 class Auth : AppCompatActivity() {
 
+    private lateinit var authManager: AuthManager
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
@@ -30,6 +32,10 @@ class Auth : AppCompatActivity() {
             v.setPadding(systemBars.left, systemBars.top, systemBars.right, systemBars.bottom)
             insets
         }
+
+        // Инициализация AuthManager и RetrofitClient
+        authManager = AuthManager.getInstance(this)
+        RetrofitClient.initialize(this)
 
         val userLogin: EditText = findViewById(R.id.Auth_editText_login)
         val userPassword: EditText = findViewById(R.id.AuthEditTextPassword)
@@ -76,15 +82,25 @@ class Auth : AppCompatActivity() {
 
                 if (response.isSuccessful) {
                     val loginResponse = response.body()
-                    Toast.makeText(
-                        this@Auth,
-                        "Вход выполнен! Добро пожаловать, ${loginResponse?.user?.login}",
-                        Toast.LENGTH_LONG
-                    ).show()
+                    if (loginResponse != null) {
+                        // Сохраняем токен и данные пользователя
+                        authManager.saveAuthData(
+                            loginResponse.access_token,
+                            loginResponse.user
+                        )
+                        
+                        Toast.makeText(
+                            this@Auth,
+                            "Вход выполнен! Добро пожаловать, ${loginResponse.user.login}",
+                            Toast.LENGTH_LONG
+                        ).show()
 
-                    val intent = Intent(this@Auth, Main::class.java)
-                    startActivity(intent)
-                    finish()
+                        val intent = Intent(this@Auth, Main::class.java)
+                        startActivity(intent)
+                        finish()
+                    } else {
+                        showAlertDialog("Ошибка", "Пустой ответ от сервера")
+                    }
                 } else {
                     val errorMessage = when (response.code()) {
                         401 -> "Неверный логин или пароль"

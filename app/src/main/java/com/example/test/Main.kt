@@ -37,6 +37,9 @@ class Main : BaseActivity() {
         enableEdgeToEdge()
         setContentView(R.layout.main)
         
+        // Инициализация RetrofitClient
+        RetrofitClient.initialize(this)
+        
         // Обработка system bars для CoordinatorLayout (без padding снизу, чтобы bottom navigation был виден)
         ViewCompat.setOnApplyWindowInsetsListener(findViewById(R.id.main)) { v, insets ->
             val systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
@@ -78,13 +81,22 @@ class Main : BaseActivity() {
             context = this,
             object : ProductAdapter.OnItemClickListener {
                 override fun onProductClick(product: Product) {
-                    // TODO: Открыть детальную информацию о товаре
-                    Toast.makeText(this@Main, "Товар: ${product.title}", Toast.LENGTH_SHORT).show()
+                    // Открываем детальную страницу товара
+                    val intent = Intent(this@Main, ProductDetailActivity::class.java)
+                    intent.putExtra("product_id", product.id)
+                    startActivity(intent)
                 }
 
                 override fun onBuyButtonClick(product: Product) {
-                    // TODO: Открыть магазины с ценами
-                    Toast.makeText(this@Main, "Купить: ${product.title}", Toast.LENGTH_SHORT).show()
+                    // Открываем страницу сравнения магазинов
+                    android.util.Log.d("Main", "Buy button clicked for product: ${product.title}, ID: ${product.id}")
+                    if (product.id <= 0) {
+                        Toast.makeText(this@Main, "Ошибка: неверный ID товара", Toast.LENGTH_SHORT).show()
+                        return
+                    }
+                    val intent = Intent(this@Main, ShopComparisonActivity::class.java)
+                    intent.putExtra("product_id", product.id)
+                    startActivity(intent)
                 }
             }
         )

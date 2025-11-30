@@ -1,5 +1,6 @@
 package com.example.test
 
+import android.content.Context
 import android.util.Log
 import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
@@ -13,6 +14,15 @@ object RetrofitClient {
 
     // Определяем флаг отладки вручную
     private const val DEBUG = true // Меняйте на false для продакшена
+
+    private var authManager: AuthManager? = null
+
+    /**
+     * Инициализация RetrofitClient с AuthManager для работы с токенами
+     */
+    fun initialize(context: Context) {
+        authManager = AuthManager.getInstance(context)
+    }
 
     private val loggingInterceptor = HttpLoggingInterceptor().apply {
         // Используем наш флаг DEBUG
@@ -31,11 +41,18 @@ object RetrofitClient {
         .addInterceptor { chain ->
             val originalRequest = chain.request()
 
-            val request = originalRequest.newBuilder()
+            // Добавляем токен в заголовок, если он есть
+            val token = authManager?.getToken()
+            val requestBuilder = originalRequest.newBuilder()
                 .addHeader("Content-Type", "application/json")
                 .addHeader("Accept", "application/json")
-                .build()
+            
+            // Добавляем Authorization заголовок с токеном
+            if (token != null) {
+                requestBuilder.addHeader("Authorization", "Bearer $token")
+            }
 
+            val request = requestBuilder.build()
             chain.proceed(request)
         }
         .build()
