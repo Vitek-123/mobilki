@@ -12,5 +12,16 @@
     <string name="email_check">Повторите email</string>
     <string name="password_check">Повторите пароль</string>
     <string name="button_product">просмотреть</string>
+    <string name="menu_main">Главная</string>
+    <string name="menu_emotions">Впечатления</string>
+    <string name="menu_favorites">Избранное</string>
+    <string name="menu_profil">Профиль</string>
+    <string name="product_image_description">Изображение товара</string>
+    <string name="button_buy">Купить</string>
+    <string name="button_buy_in_shops">Купить в %d магазинах</string>
+    <string name="button_buy_in_shop">Купить в %s</string>
+    <string name="description_not_available">Описание не указано</string>
+    <string name="price_not_available">Цена не указана</string>
+    <string name="product_name_not_available">Без названия</string>
 
 </resources>

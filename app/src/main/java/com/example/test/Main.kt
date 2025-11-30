@@ -1,183 +1,196 @@
 package com.example.test
 
-import android.net.ConnectivityManager
+import android.content.Intent
 import android.os.Bundle
+import android.view.Menu
+import android.view.MenuItem
 import android.view.View
 import android.widget.ProgressBar
 import android.widget.SearchView
+import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.enableEdgeToEdge
-import androidx.appcompat.app.AlertDialog
+import androidx.activity.viewModels
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
+import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
-import retrofit2.Call
-import retrofit2.Callback
-import retrofit2.Response
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
 
-class Main : AppCompatActivity(), ProductAdapter.OnItemClickListener {
-
+class Main : BaseActivity() {
+    
+    private val viewModel: ProductViewModel by viewModels()
     private lateinit var recyclerView: RecyclerView
-    private lateinit var productAdapter: ProductAdapter
-    private lateinit var searchView: SearchView
+    private lateinit var adapter: ProductAdapter
     private lateinit var progressBar: ProgressBar
-    private val productList = mutableListOf<Product>()
-    private var allProducts = listOf<Product>()
-
+    private lateinit var emptyTextView: TextView
+    private lateinit var errorTextView: TextView
+    private lateinit var searchView: SearchView
+    
+    private var currentSearchQuery = ""
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContentView(R.layout.main)
+        
+        // Обработка system bars для CoordinatorLayout (без padding снизу, чтобы bottom navigation был виден)
         ViewCompat.setOnApplyWindowInsetsListener(findViewById(R.id.main)) { v, insets ->
             val systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
-            v.setPadding(systemBars.left, systemBars.top, systemBars.right, systemBars.bottom)
+            v.setPadding(systemBars.left, systemBars.top, systemBars.right, 0)
+            insets
+        }
+        
+        // Обработка system bars для контента (учитываем bottom navigation)
+        ViewCompat.setOnApplyWindowInsetsListener(findViewById(R.id.content_container)) { v, insets ->
+            val systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
+            // Padding снизу уже установлен в layout (72dp для bottom navigation)
+            v.setPadding(systemBars.left, systemBars.top, systemBars.right, v.paddingBottom + systemBars.bottom)
             insets
         }
 
+        setupBottomNavigation(R.id.navigation_home)
         initViews()
-        initRecyclerView()
+        setupRecyclerView()
         setupSearchView()
-
-        if (!isNetworkAvailable()) {
-            showAlertDialog("Ошибка сети", "Отсутствует подключение к интернету")
-        } else {
-            loadProductsFromApi()
+        observeViewModel()
+        
+        // Загружаем товары при первом запуске
+        if (savedInstanceState == null) {
+            viewModel.loadProducts()
         }
     }
 
     private fun initViews() {
         recyclerView = findViewById(R.id.Main_RecyclerView_product)
-        searchView = findViewById(R.id.Main_SearchView)
         progressBar = findViewById(R.id.Main_progressBar)
+        emptyTextView = findViewById(R.id.Main_textview_empty)
+        errorTextView = findViewById(R.id.Main_textview_error)
+        searchView = findViewById(R.id.Main_SearchView)
     }
 
-    private fun initRecyclerView() {
+    private fun setupRecyclerView() {
+        adapter = ProductAdapter(
+            productList = emptyList(),
+            context = this,
+            object : ProductAdapter.OnItemClickListener {
+                override fun onProductClick(product: Product) {
+                    // TODO: Открыть детальную информацию о товаре
+                    Toast.makeText(this@Main, "Товар: ${product.title}", Toast.LENGTH_SHORT).show()
+                }
+
+                override fun onBuyButtonClick(product: Product) {
+                    // TODO: Открыть магазины с ценами
+                    Toast.makeText(this@Main, "Купить: ${product.title}", Toast.LENGTH_SHORT).show()
+                }
+            }
+        )
+
         recyclerView.layoutManager = LinearLayoutManager(this)
-        productAdapter = ProductAdapter(productList, this, this)
-        recyclerView.adapter = productAdapter
+        recyclerView.adapter = adapter
+
+        // Пагинация при прокрутке
+        recyclerView.addOnScrollListener(object : RecyclerView.OnScrollListener() {
+            override fun onScrolled(recyclerView: RecyclerView, dx: Int, dy: Int) {
+                super.onScrolled(recyclerView, dx, dy)
+                val layoutManager = recyclerView.layoutManager as? LinearLayoutManager
+                val visibleItemCount = layoutManager?.childCount ?: 0
+                val totalItemCount = layoutManager?.itemCount ?: 0
+                val firstVisibleItemPosition = layoutManager?.findFirstVisibleItemPosition() ?: 0
+
+                // Загружаем следующую страницу, когда осталось 5 элементов до конца
+                if (visibleItemCount + firstVisibleItemPosition >= totalItemCount - 5) {
+                    viewModel.loadMoreProducts(currentSearchQuery)
+                }
+            }
+        })
     }
 
     private fun setupSearchView() {
         searchView.setOnQueryTextListener(object : SearchView.OnQueryTextListener {
-            override fun onQueryTextSubmit(query: String): Boolean {
-                productAdapter.filterProducts(query)
+            override fun onQueryTextSubmit(query: String?): Boolean {
+                currentSearchQuery = query ?: ""
+                viewModel.searchProducts(currentSearchQuery)
+                searchView.clearFocus()
                 return true
             }
 
-            override fun onQueryTextChange(newText: String): Boolean {
-                productAdapter.filterProducts(newText)
-                return true
+            override fun onQueryTextChange(newText: String?): Boolean {
+                // Можно добавить debounce для поиска в реальном времени
+                return false
             }
         })
 
+        // Очистка поиска
         searchView.setOnCloseListener {
-            productAdapter.resetFilter()
+            currentSearchQuery = ""
+            viewModel.loadProducts()
             false
         }
     }
 
-
-    private fun loadProductsFromApi() {
-        showLoading(true)
-
-        RetrofitClient.apiService.getProducts().enqueue(object : Callback<ProductsResponse> {
-            override fun onResponse(call: Call<ProductsResponse>, response: Response<ProductsResponse>) {
-                showLoading(false)
-
-                if (response.isSuccessful) {
-                    val productsResponse = response.body()
-                    productsResponse?.let {
-                        val convertedProducts = convertApiProductsToAppProducts(it.products)
-                        productList.clear()
-                        productList.addAll(convertedProducts)
-                        allProducts = convertedProducts
-                        productAdapter.updateData(productList)
-
-                        if (productList.isEmpty()) {
-                            Toast.makeText(this@Main, "Товары не найдены", Toast.LENGTH_SHORT).show()
-                        } else {
-                            false
-                        }
+    private fun observeViewModel() {
+        viewModel.products.observe(this) { resource ->
+            when (resource) {
+                is Resource.Loading -> {
+                    showLoading(true)
+                    hideError()
+                    hideEmpty()
+                }
+                is Resource.Success -> {
+                    showLoading(false)
+                    hideError()
+                    val products = resource.data ?: emptyList()
+                    if (products.isEmpty()) {
+                        showEmpty()
+                    } else {
+                        hideEmpty()
+                        adapter.updateData(products)
                     }
-                } else {
-                    showAlertDialog("Ошибка", "Ошибка загрузки товаров: ${response.code()}")
+                }
+                is Resource.Error -> {
+                    showLoading(false)
+                    showError(resource.message ?: "Неизвестная ошибка")
+                    hideEmpty()
                 }
             }
-
-            override fun onFailure(call: Call<ProductsResponse>, t: Throwable) {
-                showLoading(false)
-                showAlertDialog("Ошибка сети", "Не удалось загрузить товары: ${t.message}")
-            }
-        })
-    }
-
-
-    private fun convertApiProductsToAppProducts(apiProducts: List<ProductWithPricesResponse>): List<Product> {
-        return apiProducts.mapNotNull { apiProduct ->
-            try {
-                val product = apiProduct.product
-                val prices = apiProduct.prices
-
-                val cheapestPriceInfo = prices.minByOrNull { it.price }
-                val minPrice = apiProduct.min_price ?: cheapestPriceInfo?.price
-                val cheapestShop = cheapestPriceInfo?.shop_name ?: "Не указан"
-
-
-                Product(
-                    id = product.id_product,
-                    title = product.title ?: "${product.brand} ${product.model}",
-                    brand = product.brand ?: "Не указан",
-                    model = product.model ?: "Не указана",
-                    description = product.description ?: "Описание не указано",
-                    image = product.image ?: "https://yandex.ru/images/search?pos=0&from=tabbar&img_url=https%3A%2F%2Fi.ytimg.com%2Fvi%2F3we_qAN-BzI%2Fmaxresdefault.jpg&text=загрузка&rpt=simage&lr=213",
-                    price = minPrice,
-                    shopCount = apiProduct.prices.size,
-                    cheapestShop = cheapestShop
-                )
-            } catch (e: Exception) {
-                null
-            }
-        }
-    }
-
-
-    private fun isNetworkAvailable(): Boolean {
-        val connectivityManager = getSystemService(ConnectivityManager::class.java)
-        val networkInfo = connectivityManager.activeNetworkInfo
-        return networkInfo != null && networkInfo.isConnected
-    }
-
-    private fun showAlertDialog(title: String, message: String) {
-        runOnUiThread {
-            AlertDialog.Builder(this@Main)
-                .setTitle(title)
-                .setMessage(message)
-                .setPositiveButton("OK", null)
-                .create()
-                .show()
         }
     }
 
     private fun showLoading(show: Boolean) {
-        if (show) {
-            progressBar.visibility = View.VISIBLE
-            recyclerView.visibility = View.GONE
-        } else {
-            progressBar.visibility = View.GONE
-            recyclerView.visibility = View.VISIBLE
-        }
+        progressBar.visibility = if (show) View.VISIBLE else View.GONE
+        recyclerView.visibility = if (show) View.GONE else View.VISIBLE
     }
 
-    override fun onProductClick(product: Product) {
-        Toast.makeText(this, "Выбран: ${product.title}", Toast.LENGTH_SHORT).show()
-        // TODO: Переход на экран деталей товара
+    private fun showError(message: String) {
+        errorTextView.text = "Ошибка: $message"
+        errorTextView.visibility = View.VISIBLE
+        recyclerView.visibility = View.GONE
     }
 
-    override fun onBuyButtonClick(product: Product) {
-        Toast.makeText(this, "Переход в магазин: ${product.cheapestShop}", Toast.LENGTH_SHORT).show()
-        // TODO: Открытие ссылки на товар в магазине
+    private fun hideError() {
+        errorTextView.visibility = View.GONE
+    }
+
+    private fun showEmpty() {
+        emptyTextView.visibility = View.VISIBLE
+        recyclerView.visibility = View.GONE
+    }
+
+    private fun hideEmpty() {
+        emptyTextView.visibility = View.GONE
+    }
+
+    override fun onCreateOptionsMenu(menu: Menu?): Boolean {
+        // Можно добавить меню, если нужно
+        return super.onCreateOptionsMenu(menu)
+    }
+
+    override fun onOptionsItemSelected(item: MenuItem): Boolean {
+        return super.onOptionsItemSelected(item)
     }
 }
+

@@ -33,6 +33,11 @@ android {
     kotlinOptions {
         jvmTarget = "11"
     }
+    
+    // Настройки кодировки для Java компиляции
+    tasks.withType<JavaCompile>().configureEach {
+        options.encoding = "UTF-8"
+    }
 }
 
 dependencies {
@@ -54,4 +59,15 @@ dependencies {
     implementation ("com.github.bumptech.glide:glide:4.16.0")
     annotationProcessor ("com.github.bumptech.glide:compiler:4.16.0")
     implementation ("androidx.cardview:cardview:1.0.0")
+    
+    // Lifecycle для ViewModel и LiveData
+    implementation ("androidx.lifecycle:lifecycle-runtime-ktx:2.7.0")
+    implementation ("androidx.lifecycle:lifecycle-livedata-ktx:2.7.0")
+    implementation ("androidx.lifecycle:lifecycle-viewmodel-ktx:2.7.0")
+    
+    // RecyclerView
+    implementation ("androidx.recyclerview:recyclerview:1.3.2")
+    
+    // CoordinatorLayout
+    implementation ("androidx.coordinatorlayout:coordinatorlayout:1.2.0")
 }

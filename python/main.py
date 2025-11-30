@@ -13,7 +13,7 @@ from database import *
 
 models.Base.metadata.create_all(bind=engine)
 
-app = FastAPI(title="Mobil Api", version="0.1.0")
+app = FastAPI(title="Mobil Api", version="0.3.0")
 
 # Password hashing
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")

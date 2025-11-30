@@ -1,5 +1,6 @@
 package com.example.test
 
+import android.util.Log
 import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Retrofit
@@ -8,10 +9,18 @@ import java.util.concurrent.TimeUnit
 
 object RetrofitClient {
 
-    private const val BASE_URL = "http://172.20.10.2:8000/"
+    private const val BASE_URL = "http://172.20.10.2:8000/" // TODO: Вынести в config
+
+    // Определяем флаг отладки вручную
+    private const val DEBUG = true // Меняйте на false для продакшена
 
     private val loggingInterceptor = HttpLoggingInterceptor().apply {
-        level = HttpLoggingInterceptor.Level.BODY
+        // Используем наш флаг DEBUG
+        level = if (DEBUG) {
+            HttpLoggingInterceptor.Level.BODY
+        } else {
+            HttpLoggingInterceptor.Level.NONE
+        }
     }
 
     private val okHttpClient = OkHttpClient.Builder()
@@ -20,10 +29,13 @@ object RetrofitClient {
         .readTimeout(30, TimeUnit.SECONDS)
         .writeTimeout(30, TimeUnit.SECONDS)
         .addInterceptor { chain ->
-            val request = chain.request().newBuilder()
+            val originalRequest = chain.request()
+
+            val request = originalRequest.newBuilder()
                 .addHeader("Content-Type", "application/json")
                 .addHeader("Accept", "application/json")
                 .build()
+
             chain.proceed(request)
         }
         .build()

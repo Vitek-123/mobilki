@@ -1,5 +1,7 @@
 package com.example.test
 
+
+
 import android.content.Intent
 import android.net.ConnectivityManager
 import android.os.Bundle
@@ -14,6 +16,8 @@ import androidx.core.view.WindowInsetsCompat
 import retrofit2.Call
 import retrofit2.Callback
 import retrofit2.Response
+
+import com.example.test.Main
 
 class Auth : AppCompatActivity() {
 

@@ -4,6 +4,7 @@
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:layout_margin="8dp"
+    android:importantForAccessibility="yes"
     app:cardCornerRadius="16dp"
     app:cardElevation="4dp"
     app:cardBackgroundColor="#02838C">
@@ -12,7 +13,8 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="vertical"
-        android:paddingBottom="20dp">
+        android:paddingBottom="20dp"
+        android:importantForAccessibility="yes">
 
         <ImageView
             android:id="@+id/Product_imageView_product"
@@ -20,7 +22,9 @@
             android:layout_height="200dp"
             android:scaleType="centerCrop"
             android:padding="2dp"
-            android:layout_margin="8dp" />
+            android:layout_margin="8dp"
+            android:importantForAccessibility="no"
+            android:contentDescription="@string/product_image_description" />
 
         <TextView
             android:id="@+id/Product_TextView_title"
@@ -30,6 +34,8 @@
             android:paddingVertical="10dp"
             android:textSize="30sp"
             android:textColor="#FFFFFF"
+            android:importantForAccessibility="yes"
+            android:focusable="true"
             android:text="TextView" />
 
         <TextView
@@ -42,6 +48,8 @@
             android:textColor="#E0E0E0"
             android:maxLines="3"
             android:ellipsize="end"
+            android:importantForAccessibility="yes"
+            android:focusable="true"
             android:text="TextView" />
 
         <TextView
@@ -54,6 +62,8 @@
             android:gravity="end"
             android:textColor="#FFFFFF"
             android:textStyle="bold"
+            android:importantForAccessibility="yes"
+            android:focusable="true"
             android:text="TextView" />
 
         <Button
@@ -64,6 +74,8 @@
             android:layout_marginTop="10dp"
             android:background="@drawable/rounded_button"
             android:textColor="#FFFFFF"
+            android:importantForAccessibility="yes"
+            android:focusable="true"
             android:text="@string/button_product" />
 
     </LinearLayout>

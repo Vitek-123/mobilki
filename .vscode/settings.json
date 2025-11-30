@@ -1,0 +1,34 @@
+{
+    // Настройки кодировки для правильного отображения ошибок
+    "files.encoding": "utf8",
+    "files.autoGuessEncoding": true,
+    
+    // Настройки терминала
+    "terminal.integrated.defaultProfile.windows": "PowerShell",
+    "terminal.integrated.profiles.windows": {
+        "PowerShell": {
+            "source": "PowerShell",
+            "icon": "terminal-powershell",
+            "args": [
+                "-NoExit",
+                "-Command",
+                "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; [Console]::InputEncoding = [System.Text.Encoding]::UTF8"
+            ]
+        }
+    },
+    
+    // Настройки Code Runner для Kotlin
+    "code-runner.executorMap": {
+        "kotlin": "cd $dir && gradlew.bat assembleDebug 2>&1 | Out-File -Encoding UTF8 -FilePath $dir\\build_output.txt; Get-Content $dir\\build_output.txt -Encoding UTF8"
+    },
+    
+    // Настройки для правильного отображения ошибок
+    "code-runner.runInTerminal": true,
+    "code-runner.clearPreviousOutput": true,
+    "code-runner.saveAllFilesBeforeRun": true,
+    
+    // Настройки для Android/Kotlin проектов
+    "kotlin.languageServer.enabled": true,
+    "files.eol": "\n"
+}
+
