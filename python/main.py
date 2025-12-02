@@ -13,7 +13,13 @@ import os
 from dotenv import load_dotenv
 
 import models
-from models import User, Product, Shop, Listing, Price
+from models import (
+    User, Product, Shop, Listing, Price,
+    ViewHistory, Favorite, PriceAlert,
+    ShoppingList, ShoppingListItem,
+    Comparison, ComparisonProduct,
+    Review, Referral, Subscription
+)
 import schemas
 from database import *
 
@@ -22,7 +28,7 @@ load_dotenv()
 
 models.Base.metadata.create_all(bind=engine)
 
-app = FastAPI(title="Mobil Api", version="0.5.0")
+app = FastAPI(title="Mobil Api", version="0.7.1")
 
 # JWT настройки
 SECRET_KEY = os.getenv("SECRET_KEY", "your-secret-key-change-this-in-production-min-32-chars")
@@ -421,6 +427,627 @@ def get_product(product_id: int, db: Session = Depends(get_db)):
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Ошибка при получении продукта: {str(e)}"
+        )
+
+
+# ==================== ИСТОРИЯ ПРОСМОТРОВ ====================
+
+@app.post("/user/view-history", response_model=schemas.ViewHistoryResponse)
+def add_view_history(
+    product_id: int = Query(...),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Добавить товар в историю просмотров"""
+    try:
+        # Проверяем, существует ли товар
+        product = db.query(Product).filter(Product.id_product == product_id).first()
+        if not product:
+            raise HTTPException(status_code=404, detail="Товар не найден")
+        
+        # Проверяем, есть ли уже запись за сегодня (опционально - можно убрать)
+        existing_view = db.query(ViewHistory).filter(
+            ViewHistory.user_id == current_user.id_user,
+            ViewHistory.product_id == product_id
+        ).order_by(ViewHistory.viewed_at.desc()).first()
+        
+        # Если есть недавняя запись (менее часа назад), обновляем время
+        if existing_view:
+            from datetime import timedelta
+            if existing_view.viewed_at > datetime.utcnow() - timedelta(hours=1):
+                existing_view.viewed_at = datetime.utcnow()
+                db.commit()
+                db.refresh(existing_view)
+                # Получаем продукт с ценами для ответа
+                product = db.query(Product).options(
+                    joinedload(Product.listings).joinedload(Listing.prices),
+                    joinedload(Product.listings).joinedload(Listing.shop)
+                ).filter(Product.id_product == product_id).first()
+                
+                if product:
+                    latest_prices = []
+                    shop_prices = {}
+                    for listing in product.listings:
+                        if listing.prices:
+                            latest_price = max(listing.prices, key=lambda x: x.scraped_at)
+                            if listing.shop_id not in shop_prices:
+                                latest_prices.append(schemas.PriceResponse(
+                                    price=float(latest_price.price),
+                                    scraped_at=latest_price.scraped_at,
+                                    shop_name=listing.shop.name,
+                                    shop_id=listing.shop_id,
+                                    url=listing.url
+                                ))
+                                shop_prices[listing.shop_id] = latest_price
+                    
+                    prices_values = [p.price for p in latest_prices]
+                    min_price = min(prices_values) if prices_values else None
+                    max_price = max(prices_values) if prices_values else None
+                    
+                    product_with_prices = schemas.ProductWithPrices(
+                        product=schemas.ProductResponse.model_validate(product),
+                        prices=latest_prices,
+                        min_price=min_price,
+                        max_price=max_price
+                    )
+                    
+                    return schemas.ViewHistoryResponse(
+                        id_view=existing_view.id_view,
+                        product=product_with_prices,
+                        viewed_at=existing_view.viewed_at
+                    )
+        
+        # Создаем новую запись
+        new_view = ViewHistory(
+            user_id=current_user.id_user,
+            product_id=product_id
+        )
+        db.add(new_view)
+        db.commit()
+        db.refresh(new_view)
+        
+        # Получаем продукт с ценами для ответа
+        product = db.query(Product).options(
+            joinedload(Product.listings).joinedload(Listing.prices),
+            joinedload(Product.listings).joinedload(Listing.shop)
+        ).filter(Product.id_product == product_id).first()
+        
+        if product:
+            latest_prices = []
+            shop_prices = {}
+            for listing in product.listings:
+                if listing.prices:
+                    latest_price = max(listing.prices, key=lambda x: x.scraped_at)
+                    if listing.shop_id not in shop_prices:
+                        latest_prices.append(schemas.PriceResponse(
+                            price=float(latest_price.price),
+                            scraped_at=latest_price.scraped_at,
+                            shop_name=listing.shop.name,
+                            shop_id=listing.shop_id,
+                            url=listing.url
+                        ))
+                        shop_prices[listing.shop_id] = latest_price
+            
+            prices_values = [p.price for p in latest_prices]
+            min_price = min(prices_values) if prices_values else None
+            max_price = max(prices_values) if prices_values else None
+            
+            product_with_prices = schemas.ProductWithPrices(
+                product=schemas.ProductResponse.model_validate(product),
+                prices=latest_prices,
+                min_price=min_price,
+                max_price=max_price
+            )
+            
+            return schemas.ViewHistoryResponse(
+                id_view=new_view.id_view,
+                product=product_with_prices,
+                viewed_at=new_view.viewed_at
+            )
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Ошибка при добавлении в историю: {str(e)}"
+        )
+
+
+@app.get("/user/view-history", response_model=schemas.ViewHistoryListResponse)
+def get_view_history(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=100),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Получить историю просмотров пользователя"""
+    try:
+        views = db.query(ViewHistory).filter(
+            ViewHistory.user_id == current_user.id_user
+        ).order_by(ViewHistory.viewed_at.desc()).offset(skip).limit(limit).all()
+        
+        total = db.query(ViewHistory).filter(
+            ViewHistory.user_id == current_user.id_user
+        ).count()
+        
+        views_response = []
+        for view in views:
+            # Получаем продукт с ценами
+            product = db.query(Product).options(
+                joinedload(Product.listings).joinedload(Listing.prices),
+                joinedload(Product.listings).joinedload(Listing.shop)
+            ).filter(Product.id_product == view.product_id).first()
+            
+            if product:
+                # Формируем цены
+                latest_prices = []
+                shop_prices = {}
+                for listing in product.listings:
+                    if listing.prices:
+                        latest_price = max(listing.prices, key=lambda x: x.scraped_at)
+                        if listing.shop_id not in shop_prices:
+                            latest_prices.append(schemas.PriceResponse(
+                                price=float(latest_price.price),
+                                scraped_at=latest_price.scraped_at,
+                                shop_name=listing.shop.name,
+                                shop_id=listing.shop_id,
+                                url=listing.url
+                            ))
+                            shop_prices[listing.shop_id] = latest_price
+                
+                prices_values = [p.price for p in latest_prices]
+                min_price = min(prices_values) if prices_values else None
+                max_price = max(prices_values) if prices_values else None
+                
+                product_with_prices = schemas.ProductWithPrices(
+                    product=schemas.ProductResponse.model_validate(product),
+                    prices=latest_prices,
+                    min_price=min_price,
+                    max_price=max_price
+                )
+                
+                views_response.append(schemas.ViewHistoryResponse(
+                    id_view=view.id_view,
+                    product=product_with_prices,
+                    viewed_at=view.viewed_at
+                ))
+        
+        return schemas.ViewHistoryListResponse(views=views_response, total=total)
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Ошибка при получении истории: {str(e)}"
+        )
+
+
+@app.delete("/user/view-history")
+def clear_view_history(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Очистить историю просмотров"""
+    try:
+        db.query(ViewHistory).filter(
+            ViewHistory.user_id == current_user.id_user
+        ).delete()
+        db.commit()
+        return {"message": "История просмотров очищена"}
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Ошибка при очистке истории: {str(e)}"
+        )
+
+
+# ==================== ИЗБРАННОЕ ====================
+
+@app.post("/favorites/{product_id}", response_model=schemas.FavoriteResponse)
+def add_to_favorites(
+    product_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Добавить товар в избранное"""
+    try:
+        # Проверяем, существует ли товар
+        product = db.query(Product).filter(Product.id_product == product_id).first()
+        if not product:
+            raise HTTPException(status_code=404, detail="Товар не найден")
+        
+        # Проверяем, не добавлен ли уже
+        existing = db.query(Favorite).filter(
+            Favorite.user_id == current_user.id_user,
+            Favorite.product_id == product_id
+        ).first()
+        
+        if existing:
+            raise HTTPException(status_code=400, detail="Товар уже в избранном")
+        
+        # Создаем новую запись
+        new_favorite = Favorite(
+            user_id=current_user.id_user,
+            product_id=product_id
+        )
+        db.add(new_favorite)
+        db.commit()
+        db.refresh(new_favorite)
+        
+        # Получаем продукт с ценами
+        product = db.query(Product).options(
+            joinedload(Product.listings).joinedload(Listing.prices),
+            joinedload(Product.listings).joinedload(Listing.shop)
+        ).filter(Product.id_product == product_id).first()
+        
+        latest_prices = []
+        shop_prices = {}
+        for listing in product.listings:
+            if listing.prices:
+                latest_price = max(listing.prices, key=lambda x: x.scraped_at)
+                if listing.shop_id not in shop_prices:
+                    latest_prices.append(schemas.PriceResponse(
+                        price=float(latest_price.price),
+                        scraped_at=latest_price.scraped_at,
+                        shop_name=listing.shop.name,
+                        shop_id=listing.shop_id,
+                        url=listing.url
+                    ))
+                    shop_prices[listing.shop_id] = latest_price
+        
+        prices_values = [p.price for p in latest_prices]
+        min_price = min(prices_values) if prices_values else None
+        max_price = max(prices_values) if prices_values else None
+        
+        product_with_prices = schemas.ProductWithPrices(
+            product=schemas.ProductResponse.model_validate(product),
+            prices=latest_prices,
+            min_price=min_price,
+            max_price=max_price
+        )
+        
+        return schemas.FavoriteResponse(
+            id_favorite=new_favorite.id_favorite,
+            product=product_with_prices,
+            added_at=new_favorite.added_at
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Ошибка при добавлении в избранное: {str(e)}"
+        )
+
+
+@app.get("/favorites", response_model=schemas.FavoritesListResponse)
+def get_favorites(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=100),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Получить избранное пользователя"""
+    try:
+        favorites = db.query(Favorite).filter(
+            Favorite.user_id == current_user.id_user
+        ).order_by(Favorite.added_at.desc()).offset(skip).limit(limit).all()
+        
+        total = db.query(Favorite).filter(
+            Favorite.user_id == current_user.id_user
+        ).count()
+        
+        favorites_response = []
+        for favorite in favorites:
+            product = db.query(Product).options(
+                joinedload(Product.listings).joinedload(Listing.prices),
+                joinedload(Product.listings).joinedload(Listing.shop)
+            ).filter(Product.id_product == favorite.product_id).first()
+            
+            if product:
+                latest_prices = []
+                shop_prices = {}
+                for listing in product.listings:
+                    if listing.prices:
+                        latest_price = max(listing.prices, key=lambda x: x.scraped_at)
+                        if listing.shop_id not in shop_prices:
+                            latest_prices.append(schemas.PriceResponse(
+                                price=float(latest_price.price),
+                                scraped_at=latest_price.scraped_at,
+                                shop_name=listing.shop.name,
+                                shop_id=listing.shop_id,
+                                url=listing.url
+                            ))
+                            shop_prices[listing.shop_id] = latest_price
+                
+                prices_values = [p.price for p in latest_prices]
+                min_price = min(prices_values) if prices_values else None
+                max_price = max(prices_values) if prices_values else None
+                
+                product_with_prices = schemas.ProductWithPrices(
+                    product=schemas.ProductResponse.model_validate(product),
+                    prices=latest_prices,
+                    min_price=min_price,
+                    max_price=max_price
+                )
+                
+                favorites_response.append(schemas.FavoriteResponse(
+                    id_favorite=favorite.id_favorite,
+                    product=product_with_prices,
+                    added_at=favorite.added_at
+                ))
+        
+        return schemas.FavoritesListResponse(favorites=favorites_response, total=total)
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Ошибка при получении избранного: {str(e)}"
+        )
+
+
+@app.delete("/favorites/{product_id}")
+def remove_from_favorites(
+    product_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Удалить товар из избранного"""
+    try:
+        favorite = db.query(Favorite).filter(
+            Favorite.user_id == current_user.id_user,
+            Favorite.product_id == product_id
+        ).first()
+        
+        if not favorite:
+            raise HTTPException(status_code=404, detail="Товар не найден в избранном")
+        
+        db.delete(favorite)
+        db.commit()
+        return {"message": "Товар удален из избранного"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Ошибка при удалении из избранного: {str(e)}"
+        )
+
+
+# ==================== ОТСЛЕЖИВАНИЕ ЦЕН ====================
+
+@app.post("/user/price-alerts", response_model=schemas.PriceAlertResponse)
+def create_price_alert(
+    alert: schemas.PriceAlertCreate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Создать отслеживание цены"""
+    try:
+        # Проверяем, существует ли товар
+        product = db.query(Product).filter(Product.id_product == alert.product_id).first()
+        if not product:
+            raise HTTPException(status_code=404, detail="Товар не найден")
+        
+        # Проверяем, не создано ли уже отслеживание
+        existing = db.query(PriceAlert).filter(
+            PriceAlert.user_id == current_user.id_user,
+            PriceAlert.product_id == alert.product_id,
+            PriceAlert.is_active == 1
+        ).first()
+        
+        if existing:
+            # Обновляем целевую цену
+            existing.target_price = alert.target_price
+            db.commit()
+            db.refresh(existing)
+        else:
+            # Создаем новое отслеживание
+            new_alert = PriceAlert(
+                user_id=current_user.id_user,
+                product_id=alert.product_id,
+                target_price=alert.target_price,
+                is_active=1
+            )
+            db.add(new_alert)
+            db.commit()
+            db.refresh(new_alert)
+            existing = new_alert
+        
+        # Получаем продукт с ценами
+        product = db.query(Product).options(
+            joinedload(Product.listings).joinedload(Listing.prices),
+            joinedload(Product.listings).joinedload(Listing.shop)
+        ).filter(Product.id_product == alert.product_id).first()
+        
+        latest_prices = []
+        shop_prices = {}
+        for listing in product.listings:
+            if listing.prices:
+                latest_price = max(listing.prices, key=lambda x: x.scraped_at)
+                if listing.shop_id not in shop_prices:
+                    latest_prices.append(schemas.PriceResponse(
+                        price=float(latest_price.price),
+                        scraped_at=latest_price.scraped_at,
+                        shop_name=listing.shop.name,
+                        shop_id=listing.shop_id,
+                        url=listing.url
+                    ))
+                    shop_prices[listing.shop_id] = latest_price
+        
+        prices_values = [p.price for p in latest_prices]
+        min_price = min(prices_values) if prices_values else None
+        max_price = max(prices_values) if prices_values else None
+        
+        product_with_prices = schemas.ProductWithPrices(
+            product=schemas.ProductResponse.model_validate(product),
+            prices=latest_prices,
+            min_price=min_price,
+            max_price=max_price
+        )
+        
+        return schemas.PriceAlertResponse(
+            id_alert=existing.id_alert,
+            product=product_with_prices,
+            target_price=float(existing.target_price),
+            is_active=bool(existing.is_active),
+            created_at=existing.created_at
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Ошибка при создании отслеживания: {str(e)}"
+        )
+
+
+@app.get("/user/price-alerts", response_model=schemas.PriceAlertsListResponse)
+def get_price_alerts(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=100),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Получить отслеживания цен пользователя"""
+    try:
+        alerts = db.query(PriceAlert).filter(
+            PriceAlert.user_id == current_user.id_user,
+            PriceAlert.is_active == 1
+        ).order_by(PriceAlert.created_at.desc()).offset(skip).limit(limit).all()
+        
+        total = db.query(PriceAlert).filter(
+            PriceAlert.user_id == current_user.id_user,
+            PriceAlert.is_active == 1
+        ).count()
+        
+        alerts_response = []
+        for alert in alerts:
+            product = db.query(Product).options(
+                joinedload(Product.listings).joinedload(Listing.prices),
+                joinedload(Product.listings).joinedload(Listing.shop)
+            ).filter(Product.id_product == alert.product_id).first()
+            
+            if product:
+                latest_prices = []
+                shop_prices = {}
+                for listing in product.listings:
+                    if listing.prices:
+                        latest_price = max(listing.prices, key=lambda x: x.scraped_at)
+                        if listing.shop_id not in shop_prices:
+                            latest_prices.append(schemas.PriceResponse(
+                                price=float(latest_price.price),
+                                scraped_at=latest_price.scraped_at,
+                                shop_name=listing.shop.name,
+                                shop_id=listing.shop_id,
+                                url=listing.url
+                            ))
+                            shop_prices[listing.shop_id] = latest_price
+                
+                prices_values = [p.price for p in latest_prices]
+                min_price = min(prices_values) if prices_values else None
+                max_price = max(prices_values) if prices_values else None
+                
+                product_with_prices = schemas.ProductWithPrices(
+                    product=schemas.ProductResponse.model_validate(product),
+                    prices=latest_prices,
+                    min_price=min_price,
+                    max_price=max_price
+                )
+                
+                alerts_response.append(schemas.PriceAlertResponse(
+                    id_alert=alert.id_alert,
+                    product=product_with_prices,
+                    target_price=float(alert.target_price),
+                    is_active=bool(alert.is_active),
+                    created_at=alert.created_at
+                ))
+        
+        return schemas.PriceAlertsListResponse(alerts=alerts_response, total=total)
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Ошибка при получении отслеживаний: {str(e)}"
+        )
+
+
+@app.delete("/user/price-alerts/{alert_id}")
+def delete_price_alert(
+    alert_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Удалить отслеживание цены"""
+    try:
+        alert = db.query(PriceAlert).filter(
+            PriceAlert.id_alert == alert_id,
+            PriceAlert.user_id == current_user.id_user
+        ).first()
+        
+        if not alert:
+            raise HTTPException(status_code=404, detail="Отслеживание не найдено")
+        
+        alert.is_active = 0
+        db.commit()
+        return {"message": "Отслеживание удалено"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Ошибка при удалении отслеживания: {str(e)}"
+        )
+
+
+# ==================== СТАТИСТИКА ====================
+
+@app.get("/user/stats", response_model=schemas.UserStatsResponse)
+def get_user_stats(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Получить статистику пользователя"""
+    try:
+        viewed_count = db.query(ViewHistory).filter(
+            ViewHistory.user_id == current_user.id_user
+        ).count()
+        
+        favorites_count = db.query(Favorite).filter(
+            Favorite.user_id == current_user.id_user
+        ).count()
+        
+        alerts_count = db.query(PriceAlert).filter(
+            PriceAlert.user_id == current_user.id_user,
+            PriceAlert.is_active == 1
+        ).count()
+        
+        shopping_lists_count = db.query(ShoppingList).filter(
+            ShoppingList.user_id == current_user.id_user
+        ).count()
+        
+        comparisons_count = db.query(Comparison).filter(
+            Comparison.user_id == current_user.id_user
+        ).count()
+        
+        reviews_count = db.query(Review).filter(
+            Review.user_id == current_user.id_user
+        ).count()
+        
+        return schemas.UserStatsResponse(
+            viewed_count=viewed_count,
+            favorites_count=favorites_count,
+            alerts_count=alerts_count,
+            shopping_lists_count=shopping_lists_count,
+            comparisons_count=comparisons_count,
+            reviews_count=reviews_count
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Ошибка при получении статистики: {str(e)}"
         )
 
 

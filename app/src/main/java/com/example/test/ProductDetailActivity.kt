@@ -18,6 +18,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import retrofit2.Response
+import android.util.Log
 
 class ProductDetailActivity : AppCompatActivity() {
 
@@ -34,14 +35,24 @@ class ProductDetailActivity : AppCompatActivity() {
     private var productId: Int = -1
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        // Применяем тему перед setContentView
+        ThemeUtils.applyTheme(this)
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContentView(R.layout.activity_product_detail)
         
-        ViewCompat.setOnApplyWindowInsetsListener(findViewById(R.id.main)) { v, insets ->
-            val systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
-            v.setPadding(systemBars.left, systemBars.top, systemBars.right, systemBars.bottom)
-            insets
+        // Обработка system bars
+        try {
+            val mainLayout = findViewById<androidx.coordinatorlayout.widget.CoordinatorLayout>(R.id.main)
+            if (mainLayout != null) {
+                ViewCompat.setOnApplyWindowInsetsListener(mainLayout) { v, insets ->
+                    val systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
+                    v.setPadding(systemBars.left, systemBars.top, systemBars.right, systemBars.bottom)
+                    insets
+                }
+            }
+        } catch (e: Exception) {
+            Log.e("ProductDetail", "Error setting up window insets", e)
         }
 
         // Инициализация RetrofitClient
@@ -58,6 +69,37 @@ class ProductDetailActivity : AppCompatActivity() {
         initViews()
         setupListeners()
         loadProductDetails()
+    }
+    
+    private fun addToViewHistory() {
+        if (productId <= 0) {
+            Log.w("ProductDetail", "Invalid product ID, skipping view history")
+            return
+        }
+        
+        val authManager = AuthManager.getInstance(this)
+        if (!authManager.isLoggedIn()) {
+            Log.d("ProductDetail", "User not logged in, skipping view history")
+            return
+        }
+        
+        // Используем CoroutineScope вместо lifecycleScope для совместимости с AppCompatActivity
+        // Запускаем в фоне, не блокируя UI
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
+                val response = RetrofitClient.apiService.addViewHistory(productId)
+                if (!response.isSuccessful) {
+                    // Логируем ошибку, но не крашим приложение
+                    val errorBody = response.errorBody()?.string()
+                    Log.e("ProductDetail", "Error adding to view history: ${response.code()}, message: ${response.message()}, body: $errorBody")
+                } else {
+                    Log.d("ProductDetail", "Product $productId added to view history successfully")
+                }
+            } catch (e: Exception) {
+                // Логируем ошибку, но не крашим приложение
+                Log.e("ProductDetail", "Error adding to view history", e)
+            }
+        }
     }
 
     private fun initViews() {
@@ -96,10 +138,18 @@ class ProductDetailActivity : AppCompatActivity() {
                         val productData = response.body()
                         if (productData != null) {
                             displayProduct(productData)
+                            // Добавляем в историю просмотров только после успешной загрузки товара
+                            addToViewHistory()
                         } else {
                             showError("Пустой ответ от сервера")
                         }
                     } else {
+                        val errorBody = try {
+                            response.errorBody()?.string()
+                        } catch (e: Exception) {
+                            null
+                        }
+                        Log.e("ProductDetail", "Error loading product: ${response.code()}, body: $errorBody")
                         showError("Ошибка загрузки: ${response.code()}")
                     }
                 }

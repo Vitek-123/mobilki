@@ -3,6 +3,28 @@ plugins {
     alias(libs.plugins.kotlin.android)
 }
 
+// Функция для чтения версии из main.py
+fun readVersionFromPython(): String {
+    val mainPyFile = file("${rootProject.projectDir}/python/main.py")
+    if (!mainPyFile.exists()) {
+        println("Warning: python/main.py not found, using default version")
+        return "0.6.0"
+    }
+    
+    val versionPattern = Regex("""version\s*=\s*["']([\d.]+)["']""")
+    val content = mainPyFile.readText()
+    
+    val matchResult = versionPattern.find(content)
+    if (matchResult != null) {
+        val version = matchResult.groupValues[1]
+        println("Found version in main.py: $version")
+        return version
+    }
+    
+    println("Warning: Could not find version in main.py, using default version")
+    return "0.6.0"
+}
+
 android {
     namespace = "com.example.test"
     compileSdk = 36
@@ -12,7 +34,7 @@ android {
         minSdk = 24
         targetSdk = 35
         versionCode = 1
-        versionName = "1.0"
+        versionName = readVersionFromPython()
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }

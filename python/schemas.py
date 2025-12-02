@@ -88,3 +88,165 @@ class ProductWithPrices(BaseModel):
 class ProductsResponse(BaseModel):
     products: List[ProductWithPrices]
     total: int
+
+
+# Схемы для истории просмотров
+class ViewHistoryResponse(BaseModel):
+    id_view: int
+    product: ProductWithPrices
+    viewed_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class ViewHistoryListResponse(BaseModel):
+    views: List[ViewHistoryResponse]
+    total: int
+
+
+# Схемы для избранного
+class FavoriteResponse(BaseModel):
+    id_favorite: int
+    product: ProductWithPrices
+    added_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class FavoritesListResponse(BaseModel):
+    favorites: List[FavoriteResponse]
+    total: int
+
+
+# Схемы для отслеживания цен
+class PriceAlertCreate(BaseModel):
+    product_id: int
+    target_price: float
+
+
+class PriceAlertResponse(BaseModel):
+    id_alert: int
+    product: ProductWithPrices
+    target_price: float
+    is_active: bool
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class PriceAlertsListResponse(BaseModel):
+    alerts: List[PriceAlertResponse]
+    total: int
+
+
+# Схемы для списков покупок
+class ShoppingListCreate(BaseModel):
+    name: str
+    budget: Optional[float] = None
+
+
+class ShoppingListItemResponse(BaseModel):
+    id_item: int
+    product: ProductResponse
+    quantity: int
+    is_purchased: bool
+    added_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class ShoppingListResponse(BaseModel):
+    id_list: int
+    name: str
+    budget: Optional[float] = None
+    items: List[ShoppingListItemResponse]
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class ShoppingListsListResponse(BaseModel):
+    lists: List[ShoppingListResponse]
+    total: int
+
+
+# Схемы для сравнения товаров
+class ComparisonCreate(BaseModel):
+    name: Optional[str] = None
+    product_ids: List[int]
+
+
+class ComparisonResponse(BaseModel):
+    id_comparison: int
+    name: Optional[str] = None
+    products: List[ProductWithPrices]
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class ComparisonsListResponse(BaseModel):
+    comparisons: List[ComparisonResponse]
+    total: int
+
+
+# Схемы для отзывов
+class ReviewCreate(BaseModel):
+    product_id: int
+    rating: int  # 1-5
+    comment: Optional[str] = None
+
+
+class ReviewResponse(BaseModel):
+    id_review: int
+    user: UserResponse
+    product: ProductResponse
+    rating: int
+    comment: Optional[str] = None
+    created_at: datetime
+    updated_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+
+class ReviewsListResponse(BaseModel):
+    reviews: List[ReviewResponse]
+    total: int
+
+
+# Схемы для реферальной программы
+class ReferralResponse(BaseModel):
+    id_referral: int
+    referral_code: str
+    referred_count: int
+    bonus_earned: float
+
+    class Config:
+        from_attributes = True
+
+
+# Схемы для подписки
+class SubscriptionResponse(BaseModel):
+    is_premium: bool
+    started_at: Optional[datetime] = None
+    expires_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+
+# Схемы для статистики
+class UserStatsResponse(BaseModel):
+    viewed_count: int
+    favorites_count: int
+    alerts_count: int
+    shopping_lists_count: int
+    comparisons_count: int
+    reviews_count: int

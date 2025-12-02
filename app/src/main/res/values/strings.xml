@@ -13,7 +13,7 @@
     <string name="password_check">Повторите пароль</string>
     <string name="button_product">просмотреть</string>
     <string name="menu_main">Главная</string>
-    <string name="menu_emotions">Впечатления</string>
+    <string name="menu_settings">Настройки</string>
     <string name="menu_favorites">Избранное</string>
     <string name="menu_profil">Профиль</string>
     <string name="product_image_description">Изображение товара</string>
@@ -23,5 +23,79 @@
     <string name="description_not_available">Описание не указано</string>
     <string name="price_not_available">Цена не указана</string>
     <string name="product_name_not_available">Без названия</string>
+    
+    <!-- Profile strings -->
+    <string name="profile_title">Профиль</string>
+    <string name="profile_not_logged_in">Вы не авторизованы</string>
+    <string name="profile_login_prompt">Войдите в аккаунт, чтобы использовать все возможности приложения</string>
+    <string name="profile_button_login">Войти</string>
+    <string name="profile_button_register">Зарегистрироваться</string>
+    <string name="profile_user_info">Информация о пользователе</string>
+    <string name="profile_logout">Выйти</string>
+    <string name="profile_settings">Настройки</string>
+    
+    <!-- Settings strings -->
+    <string name="settings_title">Настройки</string>
+    <string name="settings_notifications">Уведомления</string>
+    <string name="settings_notifications_desc">Получать уведомления о снижении цен</string>
+    <string name="settings_price_alerts">Уведомления о ценах</string>
+    <string name="settings_price_alerts_desc">Уведомлять при достижении целевой цены</string>
+    <string name="settings_new_products">Новые товары</string>
+    <string name="settings_new_products_desc">Уведомления о появлении новых товаров</string>
+    <string name="settings_theme">Тема приложения</string>
+    <string name="settings_theme_desc">Выберите тему оформления</string>
+    <string name="settings_theme_light">Светлая</string>
+    <string name="settings_theme_dark">Темная</string>
+    <string name="settings_theme_system">Системная</string>
+    <string name="settings_language">Язык</string>
+    <string name="settings_language_desc">Выберите язык интерфейса</string>
+    <string name="settings_currency">Валюта</string>
+    <string name="settings_currency_desc">Валюта для отображения цен</string>
+    <string name="settings_about">О приложении</string>
+    <string name="settings_about_desc">Версия и информация о приложении</string>
+    <string name="settings_version">Версия: %s</string>
+    <string name="settings_clear_cache">Очистить кэш</string>
+    <string name="settings_clear_cache_desc">Удалить сохраненные данные</string>
+    <string name="settings_privacy">Конфиденциальность</string>
+    <string name="settings_privacy_desc">Политика конфиденциальности</string>
+    <string name="settings_help">Помощь и поддержка</string>
+    <string name="settings_help_desc">Часто задаваемые вопросы</string>
+    <string name="settings_auto_update">Автообновление цен</string>
+    <string name="settings_auto_update_desc">Автоматически обновлять цены при открытии приложения</string>
+    <string name="settings_language_russian">Русский</string>
+    <string name="settings_language_english">English</string>
+    <string name="settings_currency_rub">Рубли (₽)</string>
+    <string name="settings_currency_usd">Доллары ($)</string>
+    <string name="settings_currency_eur">Евро (€)</string>
+    <string name="settings_data_usage">Использование данных</string>
+    <string name="settings_data_usage_desc">Настройки загрузки изображений и данных</string>
+    <string name="settings_export_data">Экспорт данных</string>
+    <string name="settings_export_data_desc">Экспортировать избранное и историю</string>
+    
+    <!-- Profile additional strings -->
+    <string name="profile_stats">Статистика</string>
+    <string name="profile_stats_viewed">Просмотрено</string>
+    <string name="profile_stats_favorites">Избранное</string>
+    <string name="profile_stats_alerts">Отслеживаний</string>
+    <string name="profile_favorites">Избранное</string>
+    <string name="profile_favorites_desc">Ваши избранные товары</string>
+    <string name="profile_view_history">История просмотров</string>
+    <string name="profile_view_history_desc">Недавно просмотренные товары</string>
+    <string name="profile_price_alerts">Отслеживание цен</string>
+    <string name="profile_price_alerts_desc">Товары с уведомлениями о ценах</string>
+    <string name="profile_shopping_lists">Списки покупок</string>
+    <string name="profile_shopping_lists_desc">Ваши списки покупок</string>
+    <string name="profile_comparisons">Сравнение товаров</string>
+    <string name="profile_comparisons_desc">Сравнение характеристик товаров</string>
+    <string name="profile_notifications">Уведомления</string>
+    <string name="profile_notifications_desc">Все ваши уведомления</string>
+    <string name="profile_reviews">Мои отзывы</string>
+    <string name="profile_reviews_desc">Оставленные вами отзывы</string>
+    <string name="profile_referral">Реферальная программа</string>
+    <string name="profile_referral_desc">Пригласите друзей и получите бонусы</string>
+    <string name="profile_premium">Premium</string>
+    <string name="profile_premium_desc">Расширенные возможности</string>
+    <string name="profile_edit">Редактировать профиль</string>
+    <string name="profile_go_to_settings">Настройки</string>
 
 </resources>

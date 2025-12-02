@@ -18,7 +18,11 @@ import retrofit2.Response
 
 class Registration : AppCompatActivity() {
 
+    private lateinit var authManager: AuthManager
+
     override fun onCreate(savedInstanceState: Bundle?) {
+        // Применяем тему перед setContentView
+        ThemeUtils.applyTheme(this)
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContentView(R.layout.registration)
@@ -28,8 +32,9 @@ class Registration : AppCompatActivity() {
             insets
         }
 
-        // Инициализация RetrofitClient
+        // Инициализация RetrofitClient и AuthManager
         RetrofitClient.initialize(this)
+        authManager = AuthManager.getInstance(this)
 
         val loginData: EditText = findViewById(R.id.Reg_editText_login)
         val emailData: EditText = findViewById(R.id.Reg_editText_email)
@@ -99,14 +104,12 @@ class Registration : AppCompatActivity() {
                     val user = response.body()
                     Toast.makeText(
                         this@Registration,
-                        "Регистрация успешна! ID: ${user?.id_user}",
-                        Toast.LENGTH_LONG
+                        "Регистрация успешна! Выполняется вход...",
+                        Toast.LENGTH_SHORT
                     ).show()
 
-
-                    val intent = android.content.Intent(this@Registration, Auth::class.java)
-                    startActivity(intent)
-                    finish()
+                    // После успешной регистрации автоматически логиним пользователя
+                    autoLoginAfterRegistration(login, password)
                 } else {
                     // Пытаемся получить детальное сообщение об ошибке от сервера
                     val errorMessage = try {
@@ -169,5 +172,74 @@ class Registration : AppCompatActivity() {
             404 -> "Сервер не найден. Проверьте BASE_URL"
             else -> "Ошибка регистрации (код: $code)"
         }
+    }
+    
+    /**
+     * Автоматический вход после успешной регистрации
+     */
+    private fun autoLoginAfterRegistration(login: String, password: String) {
+        val loginRequest = LoginRequest(login, password)
+        
+        RetrofitClient.apiService.loginUser(loginRequest).enqueue(object : Callback<LoginResponse> {
+            override fun onResponse(call: Call<LoginResponse>, response: Response<LoginResponse>) {
+                if (response.isSuccessful) {
+                    val loginResponse = response.body()
+                    if (loginResponse != null) {
+                        // Сохраняем токен и данные пользователя
+                        authManager.saveAuthData(
+                            loginResponse.access_token,
+                            loginResponse.user
+                        )
+                        
+                        Toast.makeText(
+                            this@Registration,
+                            "Добро пожаловать, ${loginResponse.user.login}!",
+                            Toast.LENGTH_LONG
+                        ).show()
+
+                        // Переходим на главный экран
+                        val intent = android.content.Intent(this@Registration, Main::class.java)
+                        startActivity(intent)
+                        finish()
+                    } else {
+                        // Если логин не удался, все равно переходим на главный экран
+                        // (пользователь зарегистрирован, но не авторизован)
+                        Toast.makeText(
+                            this@Registration,
+                            "Регистрация успешна, но не удалось выполнить автоматический вход. Войдите вручную.",
+                            Toast.LENGTH_LONG
+                        ).show()
+                        val intent = android.content.Intent(this@Registration, Main::class.java)
+                        startActivity(intent)
+                        finish()
+                    }
+                } else {
+                    // Если логин не удался, все равно переходим на главный экран
+                    // (пользователь зарегистрирован, но не авторизован)
+                    Log.w("Registration", "Auto-login failed after registration: ${response.code()}")
+                    Toast.makeText(
+                        this@Registration,
+                        "Регистрация успешна, но не удалось выполнить автоматический вход. Войдите вручную.",
+                        Toast.LENGTH_LONG
+                    ).show()
+                    val intent = android.content.Intent(this@Registration, Main::class.java)
+                    startActivity(intent)
+                    finish()
+                }
+            }
+
+            override fun onFailure(call: Call<LoginResponse>, t: Throwable) {
+                // Если логин не удался из-за сети, все равно переходим на главный экран
+                Log.e("Registration", "Auto-login network error: ${t.message}", t)
+                Toast.makeText(
+                    this@Registration,
+                    "Регистрация успешна, но не удалось выполнить автоматический вход. Войдите вручную.",
+                    Toast.LENGTH_LONG
+                ).show()
+                val intent = android.content.Intent(this@Registration, Main::class.java)
+                startActivity(intent)
+                finish()
+            }
+        })
     }
 }

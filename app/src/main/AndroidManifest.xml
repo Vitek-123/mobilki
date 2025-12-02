@@ -6,6 +6,7 @@
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
     <application
+        android:name=".MobilkiApplication"
         android:allowBackup="true"
         android:dataExtractionRules="@xml/data_extraction_rules"
         android:fullBackupContent="@xml/backup_rules"
@@ -20,10 +21,10 @@
             android:name=".Settings"
             android:exported="false" />
         <activity
-            android:name=".Registration"
+            android:name=".ProfileActivity"
             android:exported="false" />
         <activity
-            android:name=".Main"
+            android:name=".Registration"
             android:exported="false" />
         <activity
             android:name=".ProductDetailActivity"
@@ -33,6 +34,9 @@
             android:exported="false" />
         <activity
             android:name=".Auth"
+            android:exported="false" />
+        <activity
+            android:name=".Main"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />

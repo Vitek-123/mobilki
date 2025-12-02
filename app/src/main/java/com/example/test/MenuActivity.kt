@@ -11,6 +11,8 @@ open class BaseActivity : AppCompatActivity() {
     protected lateinit var bottomNavigationView: BottomNavigationView
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        // Применяем тему перед setContentView
+        ThemeUtils.applyTheme(this)
         super.onCreate(savedInstanceState)
         // Базовая инициализация будет в дочерних классах
     }
@@ -30,17 +32,15 @@ open class BaseActivity : AppCompatActivity() {
                     }
                     true
                 }
-                R.id.navigation_experiences -> {
-                    Toast.makeText(this, "Впечатления - в разработке", Toast.LENGTH_SHORT).show()
-                    true
-                }
-                R.id.navigation_favorites -> {
-                    Toast.makeText(this, "Избранное - в разработке", Toast.LENGTH_SHORT).show()
+                R.id.navigation_settings -> {
+                    if (this !is Settings) {
+                        startActivity(Intent(this, Settings::class.java))
+                    }
                     true
                 }
                 R.id.navigation_profile -> {
-                    if (this !is Settings) {
-                        startActivity(Intent(this, Settings::class.java))
+                    if (this !is ProfileActivity) {
+                        startActivity(Intent(this, ProfileActivity::class.java))
                     }
                     true
                 }

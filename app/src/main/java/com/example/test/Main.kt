@@ -82,9 +82,18 @@ class Main : BaseActivity() {
             object : ProductAdapter.OnItemClickListener {
                 override fun onProductClick(product: Product) {
                     // Открываем детальную страницу товара
-                    val intent = Intent(this@Main, ProductDetailActivity::class.java)
-                    intent.putExtra("product_id", product.id)
-                    startActivity(intent)
+                    if (product.id <= 0) {
+                        Toast.makeText(this@Main, "Ошибка: неверный ID товара", Toast.LENGTH_SHORT).show()
+                        return
+                    }
+                    try {
+                        val intent = Intent(this@Main, ProductDetailActivity::class.java)
+                        intent.putExtra("product_id", product.id)
+                        startActivity(intent)
+                    } catch (e: Exception) {
+                        android.util.Log.e("Main", "Error opening product detail", e)
+                        Toast.makeText(this@Main, "Ошибка при открытии товара: ${e.message}", Toast.LENGTH_SHORT).show()
+                    }
                 }
 
                 override fun onBuyButtonClick(product: Product) {
@@ -122,6 +131,16 @@ class Main : BaseActivity() {
     }
 
     private fun setupSearchView() {
+        // Делаем всю область поиска кликабельной
+        val searchContainer = findViewById<android.widget.LinearLayout>(R.id.Main_SearchContainer)
+        searchContainer?.setOnClickListener {
+            searchView.isIconified = false
+            searchView.requestFocus()
+            // Показываем клавиатуру
+            val imm = getSystemService(android.content.Context.INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager
+            imm.showSoftInput(searchView, android.view.inputmethod.InputMethodManager.SHOW_IMPLICIT)
+        }
+        
         searchView.setOnQueryTextListener(object : SearchView.OnQueryTextListener {
             override fun onQueryTextSubmit(query: String?): Boolean {
                 currentSearchQuery = query ?: ""

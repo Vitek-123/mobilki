@@ -24,6 +24,8 @@ class Auth : AppCompatActivity() {
     private lateinit var authManager: AuthManager
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        // Применяем тему перед setContentView
+        ThemeUtils.applyTheme(this)
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContentView(R.layout.auth)
@@ -89,15 +91,15 @@ class Auth : AppCompatActivity() {
                             loginResponse.user
                         )
                         
-                        Toast.makeText(
-                            this@Auth,
+                    Toast.makeText(
+                        this@Auth,
                             "Вход выполнен! Добро пожаловать, ${loginResponse.user.login}",
-                            Toast.LENGTH_LONG
-                        ).show()
+                        Toast.LENGTH_LONG
+                    ).show()
 
-                        val intent = Intent(this@Auth, Main::class.java)
-                        startActivity(intent)
-                        finish()
+                    val intent = Intent(this@Auth, Main::class.java)
+                    startActivity(intent)
+                    finish()
                     } else {
                         showAlertDialog("Ошибка", "Пустой ответ от сервера")
                     }

@@ -36,6 +36,8 @@ class ShopComparisonActivity : AppCompatActivity() {
     private var productId: Int = -1
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        // Применяем тему перед setContentView
+        ThemeUtils.applyTheme(this)
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContentView(R.layout.activity_shop_comparison)

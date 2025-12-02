@@ -35,17 +35,40 @@ class ProductAdapter(
         val buyButton: Button = itemView.findViewById(R.id.Product_Button_product)
 
         init {
-            itemView.setOnClickListener {
-                val position = adapterPosition
-                if (position != RecyclerView.NO_POSITION) {
-                    onItemClickListener?.onProductClick(productList[position])
+            // Убеждаемся, что ImageView не перехватывает клики
+            productImage.isClickable = false
+            productImage.isFocusable = false
+            
+            // Обработчик клика на всю карточку
+            itemView.setOnClickListener { view ->
+                try {
+                    val position = bindingAdapterPosition
+                    if (position != RecyclerView.NO_POSITION && position < productList.size) {
+                        val product = productList[position]
+                        if (product.id > 0 && onItemClickListener != null) {
+                            onItemClickListener.onProductClick(product)
+                        }
+                    }
+                } catch (e: Exception) {
+                    android.util.Log.e("ProductAdapter", "Error handling item click", e)
                 }
             }
 
-            buyButton.setOnClickListener {
-                val position = adapterPosition
-                if (position != RecyclerView.NO_POSITION) {
-                    onItemClickListener?.onBuyButtonClick(productList[position])
+            // Обработчик клика на кнопку покупки
+            buyButton.setOnClickListener { view ->
+                try {
+                    // Предотвращаем всплытие события на itemView
+                    view?.let {
+                        val position = bindingAdapterPosition
+                        if (position != RecyclerView.NO_POSITION && position < productList.size) {
+                            val product = productList[position]
+                            if (product.id > 0 && onItemClickListener != null) {
+                                onItemClickListener.onBuyButtonClick(product)
+                            }
+                        }
+                    }
+                } catch (e: Exception) {
+                    android.util.Log.e("ProductAdapter", "Error handling buy button click", e)
                 }
             }
         }

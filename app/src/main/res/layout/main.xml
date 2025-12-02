@@ -20,18 +20,32 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_gravity="center"
-            android:layout_marginTop="50dp"
+            android:layout_marginTop="20dp"
             android:fontFamily="@font/advent_pro_medium"
             android:text="@string/main_page"
             android:textSize="40sp" />
 
-        <SearchView
-            android:id="@+id/Main_SearchView"
+        <LinearLayout
+            android:id="@+id/Main_SearchContainer"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_margin="16dp"
+            android:layout_marginHorizontal="16dp"
+            android:layout_marginTop="8dp"
+            android:layout_marginBottom="8dp"
+            android:orientation="horizontal"
             android:background="@drawable/rounded_corners"
-            android:queryHint="Поиск товаров..." />
+            android:clickable="true"
+            android:focusable="true"
+            android:padding="4dp">
+            
+            <SearchView
+                android:id="@+id/Main_SearchView"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:background="@android:color/transparent"
+                android:queryHint="Поиск товаров..."
+                android:iconifiedByDefault="false" />
+        </LinearLayout>
 
         <ProgressBar
             android:id="@+id/Main_progressBar"
@@ -66,8 +80,8 @@
             android:layout_width="match_parent"
             android:layout_height="0dp"
             android:layout_weight="1"
-            android:layout_marginHorizontal="20dp"
-            android:layout_marginTop="20dp"
+            android:layout_marginHorizontal="16dp"
+            android:layout_marginTop="8dp"
             android:clipToPadding="false"
             android:paddingBottom="20dp" />
 
