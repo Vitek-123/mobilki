@@ -20,6 +20,7 @@
     <string name="button_buy">Купить</string>
     <string name="button_buy_in_shops">Купить в %d магазинах</string>
     <string name="button_buy_in_shop">Купить в %s</string>
+    <string name="buy_in_yandex_market">Купить в Яндекс.Маркет</string>
     <string name="description_not_available">Описание не указано</string>
     <string name="price_not_available">Цена не указана</string>
     <string name="product_name_not_available">Без названия</string>
@@ -83,8 +84,8 @@
     <string name="profile_view_history_desc">Недавно просмотренные товары</string>
     <string name="profile_price_alerts">Отслеживание цен</string>
     <string name="profile_price_alerts_desc">Товары с уведомлениями о ценах</string>
-    <string name="profile_shopping_lists">Списки покупок</string>
-    <string name="profile_shopping_lists_desc">Ваши списки покупок</string>
+    <string name="profile_shopping_lists">Переходы в магазины</string>
+    <string name="profile_shopping_lists_desc">История переходов в магазины</string>
     <string name="profile_comparisons">Сравнение товаров</string>
     <string name="profile_comparisons_desc">Сравнение характеристик товаров</string>
     <string name="profile_notifications">Уведомления</string>
@@ -97,5 +98,79 @@
     <string name="profile_premium_desc">Расширенные возможности</string>
     <string name="profile_edit">Редактировать профиль</string>
     <string name="profile_go_to_settings">Настройки</string>
+    
+    <!-- Common messages -->
+    <string name="error_invalid_product_id">Ошибка: неверный ID товара</string>
+    <string name="error_opening_product">Ошибка при открытии товара: %s</string>
+    <string name="error_opening_url">Не удалось открыть страницу товара</string>
+    <string name="error_product_not_found">Ошибка: товар не найден</string>
+    <string name="error_loading">Ошибка загрузки</string>
+    <string name="products_not_found">Товары не найдены</string>
+    <string name="search_hint">Поиск товаров…</string>
+    
+    <!-- Toast messages -->
+    <string name="toast_notifications_enabled">Уведомления включены</string>
+    <string name="toast_notifications_disabled">Уведомления выключены</string>
+    <string name="toast_price_alerts_enabled">Уведомления о ценах включены</string>
+    <string name="toast_price_alerts_disabled">Уведомления о ценах выключены</string>
+    <string name="toast_new_products_enabled">Уведомления о новых товарах включены</string>
+    <string name="toast_new_products_disabled">Уведомления о новых товарах выключены</string>
+    <string name="toast_auto_update_enabled">Автообновление цен включено</string>
+    <string name="toast_auto_update_disabled">Автообновление цен выключено</string>
+    <string name="toast_language_changed">Язык изменен. Приложение будет перезапущено.</string>
+    <string name="toast_currency_changed">Валюта изменена на %s</string>
+    <string name="toast_cache_cleared">Кэш очищен</string>
+    <string name="toast_cache_clear_error">Ошибка при очистке кэша</string>
+    <string name="toast_login_required">Войдите в аккаунт для использования этой функции</string>
+    <string name="toast_logged_out">Вы вышли из аккаунта</string>
+    <string name="toast_export_data_future">Функция экспорта данных будет реализована в будущем</string>
+    
+    <!-- Dialog messages -->
+    <string name="dialog_logout_title">Выход из аккаунта</string>
+    <string name="dialog_logout_message">Вы уверены, что хотите выйти из аккаунта?</string>
+    <string name="dialog_clear_cache_title">Очистить кэш</string>
+    <string name="dialog_clear_cache_message">Это действие удалит сохраненные данные приложения. Продолжить?</string>
+    <string name="dialog_export_data_title">Экспорт данных</string>
+    <string name="dialog_export_data_message">Экспортировать избранное и историю просмотров?</string>
+    <string name="dialog_privacy_title">Конфиденциальность</string>
+    <string name="dialog_privacy_message">Политика конфиденциальности\n\nМы собираем только необходимые данные для работы приложения:\n- Логин и email для авторизации\n- Данные о просмотренных товарах\n- Настройки приложения\n\nВсе данные хранятся локально на вашем устройстве и на защищенном сервере.\n\nМы не передаем ваши данные третьим лицам.</string>
+    <string name="dialog_help_title">Помощь и поддержка</string>
+    <string name="dialog_help_message">Часто задаваемые вопросы:\n\n1. Как добавить товар в избранное?\nНажмите на иконку ❤️ на карточке товара.\n\n2. Как настроить уведомления о ценах?\nПерейдите в Настройки → Уведомления о ценах.\n\n3. Как изменить тему приложения?\nНастройки → Тема приложения.\n\n4. Как связаться с поддержкой?\nTelegram: Senchaus52\n\nЕсли у вас есть вопросы, напишите нам!</string>
+    <string name="dialog_button_ok">Понятно</string>
+    <string name="dialog_button_cancel">Отмена</string>
+    <string name="dialog_button_clear">Очистить</string>
+    <string name="dialog_button_export">Экспортировать</string>
+    <string name="dialog_button_logout">Выйти</string>
+    
+    <!-- Feature in development -->
+    <string name="feature_in_development_favorites">Избранное - в разработке</string>
+    <string name="feature_in_development_view_history">История просмотров - в разработке</string>
+    <string name="feature_in_development_price_alerts">Отслеживание цен - в разработке</string>
+    <string name="feature_in_development_shopping_lists">Переходы в магазины - в разработке</string>
+    <string name="feature_in_development_comparisons">Сравнение товаров - в разработке</string>
+    <string name="feature_in_development_notifications">Уведомления - в разработке</string>
+    <string name="feature_in_development_premium">Premium подписка - в разработке</string>
+    
+    <!-- Shop comparison -->
+    <string name="shop_comparison_title">Сравнение цен</string>
+    <string name="shop_comparison_available_shops">Доступные магазины:</string>
+    
+    <!-- Export strings -->
+    <string name="export_date">Дата экспорта</string>
+    <string name="export_account_info">Информация об аккаунте</string>
+    <string name="export_login">Логин</string>
+    <string name="export_email">Email</string>
+    <string name="export_brand">Бренд</string>
+    <string name="export_model">Модель</string>
+    <string name="export_price">Цена</string>
+    <string name="export_shops">Магазины</string>
+    <string name="export_added_date">Добавлено</string>
+    <string name="export_no_favorites">В избранном нет товаров</string>
+    <string name="export_loading">Загрузка данных для экспорта…</string>
+    <string name="export_success">Данные успешно экспортированы</string>
+    <string name="export_error">Ошибка при экспорте данных</string>
+    <string name="export_error_no_data">Нет данных для экспорта. Добавьте товары в избранное для экспорта.</string>
+    <string name="export_error_not_logged_in">Войдите в аккаунт для экспорта данных</string>
+    <string name="export_error_favorites_not_implemented">Функция избранного еще не реализована. Добавление товаров в избранное будет доступно в следующих версиях приложения.</string>
 
 </resources>

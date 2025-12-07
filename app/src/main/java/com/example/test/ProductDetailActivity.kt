@@ -1,6 +1,7 @@
 package com.example.test
 
 import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
 import android.view.View
 import android.widget.Button
@@ -29,10 +30,12 @@ class ProductDetailActivity : AppCompatActivity() {
     private lateinit var minPriceTextView: TextView
     private lateinit var maxPriceTextView: TextView
     private lateinit var compareButton: Button
+    private lateinit var buyYandexButton: Button
     private lateinit var progressBar: ProgressBar
     private lateinit var errorTextView: TextView
 
     private var productId: Int = -1
+    private var yandexMarketUrl: String? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         // Применяем тему перед setContentView
@@ -61,7 +64,7 @@ class ProductDetailActivity : AppCompatActivity() {
         // Получаем ID товара из Intent
         productId = intent.getIntExtra("product_id", -1)
         if (productId == -1) {
-            Toast.makeText(this, "Ошибка: товар не найден", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, getString(R.string.error_product_not_found), Toast.LENGTH_SHORT).show()
             finish()
             return
         }
@@ -110,6 +113,7 @@ class ProductDetailActivity : AppCompatActivity() {
         minPriceTextView = findViewById(R.id.ProductDetail_textView_minPrice)
         maxPriceTextView = findViewById(R.id.ProductDetail_textView_maxPrice)
         compareButton = findViewById(R.id.ProductDetail_button_compare)
+        buyYandexButton = findViewById(R.id.ProductDetail_button_buy_yandex)
         progressBar = findViewById(R.id.ProductDetail_progressBar)
         errorTextView = findViewById(R.id.ProductDetail_textView_error)
     }
@@ -119,6 +123,20 @@ class ProductDetailActivity : AppCompatActivity() {
             val intent = Intent(this, ShopComparisonActivity::class.java)
             intent.putExtra("product_id", productId)
             startActivity(intent)
+        }
+        
+        buyYandexButton.setOnClickListener {
+            yandexMarketUrl?.let { url ->
+                try {
+                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
+                    startActivity(intent)
+                } catch (e: Exception) {
+                    Log.e("ProductDetail", "Ошибка открытия URL Яндекс.Маркет", e)
+                    Toast.makeText(this, getString(R.string.error_opening_url), Toast.LENGTH_SHORT).show()
+                }
+            } ?: run {
+                Toast.makeText(this, "Ссылка на Яндекс.Маркет недоступна", Toast.LENGTH_SHORT).show()
+            }
         }
     }
 
@@ -205,6 +223,24 @@ class ProductDetailActivity : AppCompatActivity() {
             String.format("%,.0f ₽", maxPrice)
         } else {
             "Не указана"
+        }
+
+        // Поиск URL Яндекс.Маркет
+        yandexMarketUrl = prices
+            .firstOrNull { price ->
+                price.shop_name.contains("Яндекс", ignoreCase = true) ||
+                price.shop_name.contains("Yandex", ignoreCase = true) ||
+                price.shop_name.contains("Маркет", ignoreCase = true) ||
+                price.shop_name.contains("Market", ignoreCase = true) ||
+                (price.url?.contains("market.yandex.ru", ignoreCase = true) == true)
+            }?.url
+
+        // Показываем кнопку "Купить в Яндекс.Маркет" только если есть URL
+        if (!yandexMarketUrl.isNullOrEmpty()) {
+            buyYandexButton.visibility = View.VISIBLE
+            buyYandexButton.isEnabled = true
+        } else {
+            buyYandexButton.visibility = View.GONE
         }
 
         // Кнопка сравнения

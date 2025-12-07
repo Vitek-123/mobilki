@@ -1,8 +1,7 @@
 from fastapi import FastAPI, Depends, HTTPException, status, Query
-from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
+from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
 from sqlalchemy.orm import joinedload
-from sqlalchemy import func
 import uvicorn
 from typing import List, Optional
 from passlib.context import CryptContext
@@ -11,6 +10,7 @@ from jose import JWTError, jwt
 from datetime import datetime, timedelta
 import os
 from dotenv import load_dotenv
+import logging
 
 import models
 from models import (
@@ -23,12 +23,41 @@ from models import (
 import schemas
 from database import *
 
+# Импорт сервиса внешних данных
+from external_data_service import ExternalDataService
+
 # Загружаем переменные окружения
 load_dotenv()
 
-models.Base.metadata.create_all(bind=engine)
+# Настройка логирования
+logging.basicConfig(
+    level=logging.INFO,  # INFO для нормальной работы, DEBUG слишком много логов
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
 
-app = FastAPI(title="Mobil Api", version="0.7.1")
+# Уменьшаем уровень логирования для urllib3 (слишком много DEBUG логов)
+logging.getLogger("urllib3").setLevel(logging.WARNING)
+logging.getLogger("urllib3.connectionpool").setLevel(logging.WARNING)
+
+# Создание таблиц БД (только если БД доступна)
+try:
+    models.Base.metadata.create_all(bind=engine)
+    logging.info("Таблицы БД созданы/проверены")
+except Exception as e:
+    logging.warning(f"Не удалось подключиться к БД: {e}. Приложение будет работать, но функции, требующие БД, будут недоступны.")
+
+app = FastAPI(title="Mobil Api", version="0.9.3")
+
+# Инициализация сервиса внешних данных
+# Redis можно отключить, установив REDIS_ENABLED=false в .env
+redis_enabled = os.getenv("REDIS_ENABLED", "true").lower() in ("true", "1", "yes")
+external_data_service = ExternalDataService(
+    redis_host=os.getenv("REDIS_HOST", "localhost"),
+    redis_port=int(os.getenv("REDIS_PORT", "6379")),
+    redis_db=int(os.getenv("REDIS_DB", "0")),
+    cache_ttl=int(os.getenv("CACHE_TTL", "10800")),  # 3 часа (10800 секунд)
+    redis_enabled=redis_enabled
+)
 
 # JWT настройки
 SECRET_KEY = os.getenv("SECRET_KEY", "your-secret-key-change-this-in-production-min-32-chars")
@@ -304,126 +333,214 @@ def come_in(user: schemas.UserLogin, db: Session = Depends(get_db)):
     )
 
 
-# Новые эндпоинты для продуктов
+# Эндпоинты для продуктов (только внешние источники - API и парсинг)
 @app.get("/products", response_model=schemas.ProductsResponse)
 def get_products(
         skip: int = Query(0, ge=0),
         limit: int = Query(50, ge=1, le=100),
-        search: Optional[str] = None,
-        db: Session = Depends(get_db)
+        search: Optional[str] = Query(None, description="Поисковый запрос"),
+        use_cache: bool = Query(True, description="Использовать кэш"),
 ):
+    """
+    Поиск товаров во внешних источниках
+    Если search не указан, возвращает пустой результат
+    """
     try:
-        # Базовый запрос с eager loading
-        query = db.query(Product).options(
-            joinedload(Product.listings).joinedload(Listing.prices),
-            joinedload(Product.listings).joinedload(Listing.shop)
+        if not search:
+            return schemas.ProductsResponse(products=[], total=0)
+        
+        logging.info(f"Поиск товаров по запросу '{search}'")
+        
+        # Получаем данные из внешних источников
+        aggregated_products = external_data_service.aggregate_by_product(
+            query=search,
+            use_cache=use_cache
         )
-
-        # Поиск по названию, бренду или модели
-        if search:
-            search_term = f"%{search}%"
-            query = query.filter(
-                (Product.title.ilike(search_term)) |
-                (Product.brand.ilike(search_term)) |
-                (Product.model.ilike(search_term))
-            )
-
-        # Получаем общее количество
-        total = query.count()
-
-        # Получаем продукты с пагинацией
-        products = query.offset(skip).limit(limit).all()
-
-        # Формируем ответ с ценами
+        
+        # Применяем пагинацию
+        total = len(aggregated_products)
+        paginated_products = aggregated_products[skip:skip + limit]
+        
+        # Преобразование в формат API
         products_with_prices = []
-        for product in products:
-            # Получаем актуальные цены для продукта из eager loaded данных
-            latest_prices = []
-            shop_prices = {}
-
-            for listing in product.listings:
-                if listing.prices:
-                    # Берем последнюю цену для каждого листинга
-                    latest_price = max(listing.prices, key=lambda x: x.scraped_at)
-                    if listing.shop_id not in shop_prices:
-                        price_response = schemas.PriceResponse(
-                            price=float(latest_price.price),
-                            scraped_at=latest_price.scraped_at,
-                            shop_name=listing.shop.name,
-                            shop_id=listing.shop_id,
-                            url=listing.url
-                        )
-                        latest_prices.append(price_response)
-                        shop_prices[listing.shop_id] = price_response
-
-            # Вычисляем мин и макс цены
-            prices_values = [p.price for p in latest_prices]
-            min_price = min(prices_values) if prices_values else None
-            max_price = max(prices_values) if prices_values else None
-
+        for item in paginated_products:
+            # Генерируем ID на основе хеша бренда и модели
+            product_id = abs(hash(f"{item['brand']}_{item['model']}")) % 1000000
+            
+            product_response = schemas.ProductResponse(
+                id_product=product_id,
+                title=item['title'],
+                brand=item['brand'],
+                model=item['model'],
+                image=item.get('image'),
+                description=item.get('description')
+            )
+            
+            # Преобразование цен
+            price_responses = []
+            for price_data in item['prices']:
+                price_response = schemas.PriceResponse(
+                    price=price_data['price'],
+                    scraped_at=datetime.fromisoformat(price_data['scraped_at']),
+                    shop_name=price_data['shop_name'],
+                    shop_id=abs(hash(price_data['shop_name'])) % 10000,  # Временный ID магазина
+                    url=price_data['url']
+                )
+                price_responses.append(price_response)
+            
             product_with_prices = schemas.ProductWithPrices(
-                product=schemas.ProductResponse.model_validate(product),
-                prices=latest_prices,
-                min_price=min_price,
-                max_price=max_price
+                product=product_response,
+                prices=price_responses,
+                min_price=item.get('min_price'),
+                max_price=item.get('max_price')
             )
             products_with_prices.append(product_with_prices)
-
+        
         return schemas.ProductsResponse(
             products=products_with_prices,
             total=total
         )
     except Exception as e:
+        logging.error(f"Ошибка при получении продуктов: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Ошибка при получении продуктов: {str(e)}"
         )
 
 
-@app.get("/products/{product_id}", response_model=schemas.ProductWithPrices)
-def get_product(product_id: int, db: Session = Depends(get_db)):
+@app.get("/products/popular-phones", response_model=schemas.ProductsResponse)
+def get_popular_phones(
+    limit: int = Query(3, ge=1, le=10, description="Количество популярных телефонов"),
+    use_cache: bool = Query(True, description="Использовать кэш")
+):
+    """
+    Получение топ популярных телефонов
+    Возвращает 3 самых популярных телефона по умолчанию (mock данные)
+    """
     try:
-        product = db.query(Product).options(
-            joinedload(Product.listings).joinedload(Listing.prices),
-            joinedload(Product.listings).joinedload(Listing.shop)
-        ).filter(Product.id_product == product_id).first()
+        logging.info(f"Запрос популярных телефонов: limit={limit}, use_cache={use_cache}")
+        # Получаем популярные телефоны (mock данные)
+        phones = external_data_service.get_popular_phones(
+            limit=limit, 
+            use_cache=use_cache
+        )
+        logging.info(f"Получено {len(phones)} телефонов из сервиса")
+        
+        # Преобразование в формат API
+        products_with_prices = []
+        for item in phones:
+            # Генерируем ID на основе хеша бренда и модели
+            product_id = abs(hash(f"{item['brand']}_{item['model']}")) % 1000000
+            
+            product_response = schemas.ProductResponse(
+                id_product=product_id,
+                title=item['title'],
+                brand=item['brand'],
+                model=item['model'],
+                image=item.get('image'),
+                description=item.get('description')
+            )
+            
+            # Преобразование цен
+            price_responses = []
+            for price_data in item['prices']:
+                price_response = schemas.PriceResponse(
+                    price=price_data['price'],
+                    scraped_at=datetime.fromisoformat(price_data['scraped_at']),
+                    shop_name=price_data['shop_name'],
+                    shop_id=abs(hash(price_data['shop_name'])) % 10000,
+                    url=price_data['url']
+                )
+                price_responses.append(price_response)
+            
+            product_with_prices = schemas.ProductWithPrices(
+                product=product_response,
+                prices=price_responses,
+                min_price=item.get('min_price'),
+                max_price=item.get('max_price')
+            )
+            products_with_prices.append(product_with_prices)
+        
+        logging.info(f"Возвращаем {len(products_with_prices)} товаров клиенту")
+        return schemas.ProductsResponse(
+            products=products_with_prices,
+            total=len(products_with_prices)
+        )
+    except Exception as e:
+        logging.error(f"Ошибка при получении популярных телефонов: {e}", exc_info=True)
+        # Возвращаем пустой список вместо ошибки, чтобы приложение не падало
+        return schemas.ProductsResponse(
+            products=[],
+            total=0
+        )
 
-        if not product:
-            raise HTTPException(status_code=404, detail="Product not found")
 
-        # Получаем все цены для продукта из eager loaded данных
-        latest_prices = []
+@app.get("/products/{brand}/{model}", response_model=schemas.ProductWithPrices)
+def get_product(
+    brand: str,
+    model: str,
+    use_cache: bool = Query(True, description="Использовать кэш")
+):
+    """
+    Получение цен на конкретный товар по бренду и модели
+    """
+    try:
+        # Получаем цены из внешних источников
+        prices = external_data_service.get_product_prices(
+            brand=brand,
+            model=model,
+            use_cache=use_cache
+        )
+        
+        if not prices:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Товар {brand} {model} не найден"
+            )
+        
+        # Группировка по магазинам (берем минимальную цену для каждого магазина)
         shop_prices = {}
-
-        for listing in product.listings:
-            if listing.prices:
-                # Берем последнюю цену для каждого листинга
-                latest_price = max(listing.prices, key=lambda x: x.scraped_at)
-                if listing.shop_id not in shop_prices:
-                    price_response = schemas.PriceResponse(
-                        price=float(latest_price.price),
-                        scraped_at=latest_price.scraped_at,
-                        shop_name=listing.shop.name,
-                        shop_id=listing.shop_id,
-                        url=listing.url
-                    )
-                    latest_prices.append(price_response)
-                    shop_prices[listing.shop_id] = price_response
-
-        # Вычисляем мин и макс цены
-        prices_values = [p.price for p in latest_prices]
+        for price_data in prices:
+            shop_name = price_data['shop_name']
+            if shop_name not in shop_prices or price_data['price'] < shop_prices[shop_name]['price']:
+                shop_prices[shop_name] = price_data
+        
+        # Создание объекта продукта
+        product_response = schemas.ProductResponse(
+            id_product=abs(hash(f"{brand}_{model}")) % 1000000,
+            title=f"{brand} {model}",
+            brand=brand,
+            model=model,
+            image=None,
+            description=None
+        )
+        
+        # Преобразование цен
+        price_responses = []
+        for shop_name, price_data in shop_prices.items():
+            price_response = schemas.PriceResponse(
+                price=price_data['price'],
+                scraped_at=datetime.fromisoformat(price_data['scraped_at']),
+                shop_name=shop_name,
+                shop_id=abs(hash(shop_name)) % 10000,
+                url=price_data['url']
+            )
+            price_responses.append(price_response)
+        
+        prices_values = [p.price for p in price_responses]
         min_price = min(prices_values) if prices_values else None
         max_price = max(prices_values) if prices_values else None
-
+        
         return schemas.ProductWithPrices(
-            product=schemas.ProductResponse.model_validate(product),
-            prices=latest_prices,
+            product=product_response,
+            prices=price_responses,
             min_price=min_price,
             max_price=max_price
         )
     except HTTPException:
         raise
     except Exception as e:
+        logging.error(f"Ошибка при получении продукта: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Ошибка при получении продукта: {str(e)}"
@@ -1048,6 +1165,37 @@ def get_user_stats(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Ошибка при получении статистики: {str(e)}"
+        )
+
+
+# ==================== УПРАВЛЕНИЕ КЭШЕМ ====================
+
+
+@app.get("/external/cache/stats")
+def get_cache_stats():
+    """Получение статистики кэша"""
+    try:
+        stats = external_data_service.get_cache_stats()
+        return stats
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Ошибка при получении статистики: {str(e)}"
+        )
+
+
+@app.delete("/external/cache/clear")
+def clear_cache(
+    pattern: str = Query("*", description="Паттерн для очистки кэша")
+):
+    """Очистка кэша"""
+    try:
+        external_data_service.clear_cache(pattern=pattern)
+        return {"message": f"Кэш очищен (паттерн: {pattern})"}
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Ошибка при очистке кэша: {str(e)}"
         )
 
 

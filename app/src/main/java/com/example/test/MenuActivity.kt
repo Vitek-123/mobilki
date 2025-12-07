@@ -1,5 +1,6 @@
 package com.example.test
 
+import android.content.Context
 import android.content.Intent
 import android.os.Bundle
 import android.widget.Toast
@@ -9,6 +10,11 @@ import com.google.android.material.bottomnavigation.BottomNavigationView
 open class BaseActivity : AppCompatActivity() {
 
     protected lateinit var bottomNavigationView: BottomNavigationView
+
+    override fun attachBaseContext(newBase: Context) {
+        // Применяем сохраненный язык
+        super.attachBaseContext(LocaleHelper.attachBaseContext(newBase))
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         // Применяем тему перед setContentView

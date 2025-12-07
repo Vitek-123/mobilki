@@ -40,7 +40,6 @@ class ProfileActivity : BaseActivity() {
     private lateinit var layoutShoppingLists: LinearLayout
     private lateinit var layoutComparisons: LinearLayout
     private lateinit var layoutNotifications: LinearLayout
-    private lateinit var layoutPremium: LinearLayout
     
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -93,7 +92,6 @@ class ProfileActivity : BaseActivity() {
         layoutShoppingLists = findViewById(R.id.Profile_layout_shoppingLists)
         layoutComparisons = findViewById(R.id.Profile_layout_comparisons)
         layoutNotifications = findViewById(R.id.Profile_layout_notifications)
-        layoutPremium = findViewById(R.id.Profile_layout_premium)
         
         // Переход к настройкам
         findViewById<LinearLayout>(R.id.Profile_layout_settings).setOnClickListener {
@@ -137,7 +135,6 @@ class ProfileActivity : BaseActivity() {
         layoutShoppingLists.visibility = View.VISIBLE
         layoutComparisons.visibility = View.VISIBLE
         layoutNotifications.visibility = View.VISIBLE
-        layoutPremium.visibility = View.VISIBLE
         
         // Получаем данные пользователя
         val user = authManager.getCurrentUser()
@@ -158,23 +155,22 @@ class ProfileActivity : BaseActivity() {
         layoutShoppingLists.visibility = View.GONE
         layoutComparisons.visibility = View.GONE
         layoutNotifications.visibility = View.GONE
-        layoutPremium.visibility = View.GONE
     }
     
     private fun showLogoutDialog() {
         AlertDialog.Builder(this)
-            .setTitle("Выход из аккаунта")
-            .setMessage("Вы уверены, что хотите выйти из аккаунта?")
-            .setPositiveButton("Выйти") { _, _ ->
+            .setTitle(getString(R.string.dialog_logout_title))
+            .setMessage(getString(R.string.dialog_logout_message))
+            .setPositiveButton(getString(R.string.dialog_button_logout)) { _, _ ->
                 logout()
             }
-            .setNegativeButton("Отмена", null)
+            .setNegativeButton(getString(R.string.dialog_button_cancel), null)
             .show()
     }
     
     private fun logout() {
         authManager.logout()
-        Toast.makeText(this, "Вы вышли из аккаунта", Toast.LENGTH_SHORT).show()
+        Toast.makeText(this, getString(R.string.toast_logged_out), Toast.LENGTH_SHORT).show()
         showNotLoggedInState()
         setupStatistics()
     }
@@ -215,71 +211,61 @@ class ProfileActivity : BaseActivity() {
         // Избранное
         layoutFavorites.setOnClickListener {
             if (!authManager.isLoggedIn()) {
-                Toast.makeText(this, "Войдите в аккаунт для использования этой функции", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, getString(R.string.toast_login_required), Toast.LENGTH_SHORT).show()
                 return@setOnClickListener
             }
             // TODO: Открыть FavoritesActivity
-            Toast.makeText(this, "Избранное - в разработке", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, getString(R.string.feature_in_development_favorites), Toast.LENGTH_SHORT).show()
         }
         
         // История просмотров
         layoutViewHistory.setOnClickListener {
             if (!authManager.isLoggedIn()) {
-                Toast.makeText(this, "Войдите в аккаунт для использования этой функции", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, getString(R.string.toast_login_required), Toast.LENGTH_SHORT).show()
                 return@setOnClickListener
             }
             // TODO: Открыть ViewHistoryActivity
-            Toast.makeText(this, "История просмотров - в разработке", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, getString(R.string.feature_in_development_view_history), Toast.LENGTH_SHORT).show()
         }
         
         // Отслеживание цен
         layoutPriceAlerts.setOnClickListener {
             if (!authManager.isLoggedIn()) {
-                Toast.makeText(this, "Войдите в аккаунт для использования этой функции", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, getString(R.string.toast_login_required), Toast.LENGTH_SHORT).show()
                 return@setOnClickListener
             }
             // TODO: Открыть PriceAlertsActivity
-            Toast.makeText(this, "Отслеживание цен - в разработке", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, getString(R.string.feature_in_development_price_alerts), Toast.LENGTH_SHORT).show()
         }
         
-        // Списки покупок
+        // Переходы в магазины
         layoutShoppingLists.setOnClickListener {
             if (!authManager.isLoggedIn()) {
-                Toast.makeText(this, "Войдите в аккаунт для использования этой функции", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, getString(R.string.toast_login_required), Toast.LENGTH_SHORT).show()
                 return@setOnClickListener
             }
             // TODO: Открыть ShoppingListsActivity
-            Toast.makeText(this, "Списки покупок - в разработке", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, getString(R.string.feature_in_development_shopping_lists), Toast.LENGTH_SHORT).show()
         }
         
         // Сравнение товаров
         layoutComparisons.setOnClickListener {
             if (!authManager.isLoggedIn()) {
-                Toast.makeText(this, "Войдите в аккаунт для использования этой функции", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, getString(R.string.toast_login_required), Toast.LENGTH_SHORT).show()
                 return@setOnClickListener
             }
             // TODO: Открыть ComparisonsActivity
-            Toast.makeText(this, "Сравнение товаров - в разработке", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, getString(R.string.feature_in_development_comparisons), Toast.LENGTH_SHORT).show()
         }
         
         // Уведомления
         layoutNotifications.setOnClickListener {
             if (!authManager.isLoggedIn()) {
-                Toast.makeText(this, "Войдите в аккаунт для использования этой функции", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, getString(R.string.toast_login_required), Toast.LENGTH_SHORT).show()
                 return@setOnClickListener
             }
             // TODO: Открыть NotificationsActivity
-            Toast.makeText(this, "Уведомления - в разработке", Toast.LENGTH_SHORT).show()
-        }
-        
-        // Premium
-        layoutPremium.setOnClickListener {
-            if (!authManager.isLoggedIn()) {
-                Toast.makeText(this, "Войдите в аккаунт для использования этой функции", Toast.LENGTH_SHORT).show()
-                return@setOnClickListener
-            }
-            // TODO: Открыть PremiumActivity
-            Toast.makeText(this, "Premium подписка - в разработке", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, getString(R.string.feature_in_development_notifications), Toast.LENGTH_SHORT).show()
         }
     }
     

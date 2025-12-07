@@ -29,6 +29,12 @@ interface ApiService {
         @Query("search") search: String? = null
     ): Response<ProductsResponse>
     
+    @GET("/products/popular-phones")
+    suspend fun getPopularPhones(
+        @Query("limit") limit: Int = 3,
+        @Query("use_cache") useCache: Boolean = true
+    ): Response<ProductsResponse>
+    
     @GET("/products/{id}")
     suspend fun getProductByIdSuspend(@Path("id") productId: Int): Response<ProductWithPricesResponse>
     

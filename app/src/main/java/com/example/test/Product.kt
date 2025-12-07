@@ -9,7 +9,8 @@ data class Product(
     val image: String,
     val price: Float?,
     val shopCount: Int,
-    val cheapestShop: String
+    val cheapestShop: String,
+    val url: String? = null  // URL товара в магазине
 ) {
     fun getFormattedPrice(): String {
         return try {

@@ -110,12 +110,23 @@
                     tools:text="82 999 ₽" />
             </LinearLayout>
 
+            <!-- Кнопка покупки в Яндекс.Маркет -->
+            <Button
+                android:id="@+id/ProductDetail_button_buy_yandex"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="24dp"
+                android:text="@string/buy_in_yandex_market"
+                android:textSize="16sp"
+                android:background="@drawable/rounded_button"
+                android:visibility="gone" />
+
             <!-- Кнопка сравнения магазинов -->
             <Button
                 android:id="@+id/ProductDetail_button_compare"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="24dp"
+                android:layout_marginTop="16dp"
                 android:text="Сравнить цены в магазинах"
                 android:textSize="16sp"
                 android:background="@drawable/rounded_button" />

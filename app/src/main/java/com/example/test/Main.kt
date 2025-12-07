@@ -1,6 +1,7 @@
 package com.example.test
 
 import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
 import android.view.Menu
 import android.view.MenuItem
@@ -19,6 +20,9 @@ import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import retrofit2.Response
 
 class Main : BaseActivity() {
     
@@ -83,7 +87,7 @@ class Main : BaseActivity() {
                 override fun onProductClick(product: Product) {
                     // Открываем детальную страницу товара
                     if (product.id <= 0) {
-                        Toast.makeText(this@Main, "Ошибка: неверный ID товара", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(this@Main, getString(R.string.error_invalid_product_id), Toast.LENGTH_SHORT).show()
                         return
                     }
                     try {
@@ -92,20 +96,43 @@ class Main : BaseActivity() {
                         startActivity(intent)
                     } catch (e: Exception) {
                         android.util.Log.e("Main", "Error opening product detail", e)
-                        Toast.makeText(this@Main, "Ошибка при открытии товара: ${e.message}", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(this@Main, getString(R.string.error_opening_product, e.message ?: ""), Toast.LENGTH_SHORT).show()
                     }
                 }
 
                 override fun onBuyButtonClick(product: Product) {
-                    // Открываем страницу сравнения магазинов
-                    android.util.Log.d("Main", "Buy button clicked for product: ${product.title}, ID: ${product.id}")
-                    if (product.id <= 0) {
-                        Toast.makeText(this@Main, "Ошибка: неверный ID товара", Toast.LENGTH_SHORT).show()
+                    // Открываем URL товара в браузере
+                    android.util.Log.d("Main", "Buy button clicked for product: ${product.title}, URL: ${product.url}")
+                    
+                    // Если URL уже есть, открываем его
+                    if (!product.url.isNullOrEmpty()) {
+                        openProductUrl(product.url)
                         return
                     }
-                    val intent = Intent(this@Main, ShopComparisonActivity::class.java)
-                    intent.putExtra("product_id", product.id)
-                    startActivity(intent)
+                    
+                    // Если URL нет, ищем товар по названию в Яндекс.Маркет
+                    searchProductAndOpen(product)
+                }
+                
+                private fun openProductUrl(url: String) {
+                    try {
+                        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
+                        startActivity(intent)
+                    } catch (e: Exception) {
+                        android.util.Log.e("Main", "Ошибка открытия URL", e)
+                        Toast.makeText(this@Main, getString(R.string.error_opening_url), Toast.LENGTH_SHORT).show()
+                    }
+                }
+                
+                private fun searchProductAndOpen(product: Product) {
+                    // Формируем поисковый запрос из названия товара
+                    val searchQuery = product.title ?: "${product.brand} ${product.model}".trim()
+                    
+                    android.util.Log.d("Main", "Открываем поиск в Яндекс.Маркет: $searchQuery")
+                    
+                    // Открываем поиск в Яндекс.Маркет с названием товара
+                    val searchUrl = "https://market.yandex.ru/search?text=${Uri.encode(searchQuery)}"
+                    openProductUrl(searchUrl)
                 }
             }
         )

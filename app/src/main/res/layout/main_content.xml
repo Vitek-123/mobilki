@@ -23,7 +23,7 @@
         android:layout_height="wrap_content"
         android:layout_margin="16dp"
         android:background="@drawable/rounded_corners"
-        android:queryHint="Поиск товаров..." />
+        android:queryHint="@string/search_hint" />
 
     <ProgressBar
         android:id="@+id/Main_progressBar"
@@ -39,7 +39,7 @@
         android:layout_height="wrap_content"
         android:layout_gravity="center"
         android:layout_marginTop="100dp"
-        android:text="Товары не найдены"
+            android:text="@string/products_not_found"
         android:textSize="18sp"
         android:visibility="gone" />
 
@@ -49,7 +49,7 @@
         android:layout_height="wrap_content"
         android:layout_gravity="center"
         android:layout_marginTop="100dp"
-        android:text="Ошибка загрузки"
+            android:text="@string/error_loading"
         android:textSize="18sp"
         android:visibility="gone" />
 
