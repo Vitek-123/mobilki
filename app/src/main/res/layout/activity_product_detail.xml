@@ -25,7 +25,10 @@
                 android:layout_height="300dp"
                 android:scaleType="centerCrop"
                 android:background="#E0E0E0"
-                android:contentDescription="Изображение товара" />
+                android:clickable="true"
+                android:focusable="true"
+                android:foreground="?android:attr/selectableItemBackground"
+                android:contentDescription="Изображение товара. Нажмите для открытия в Яндекс.Маркет" />
 
             <!-- Название товара -->
             <TextView

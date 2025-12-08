@@ -223,7 +223,7 @@ class ShopComparisonActivity : AppCompatActivity() {
 
             try {
                 holder.shopNameTextView.text = price.shop_name ?: "Неизвестный магазин"
-                holder.priceTextView.text = String.format("%,.0f ₽", price.price)
+                holder.priceTextView.text = CurrencyUtils.formatPrice(holder.itemView.context, price.price.toDouble())
                 
                 // Выделяем самую дешевую цену
                 if (isCheapest) {

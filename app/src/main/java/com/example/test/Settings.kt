@@ -154,11 +154,14 @@ class Settings : BaseActivity() {
         }
         
         // Валюта
-        val currentCurrency = prefs.getString("currency", "rub") ?: "rub"
+        val currentCurrency = CurrencyUtils.getSelectedCurrency(this)
         updateCurrencyDisplay(currentCurrency)
         layoutCurrency.setOnClickListener {
             showCurrencyDialog(currentCurrency)
         }
+        
+        // Инициализируем курсы валют при открытии настроек (если еще не инициализированы)
+        CurrencyUtils.initializeRates(this)
         
         // Очистить кэш
         layoutClearCache.setOnClickListener {
@@ -239,6 +242,10 @@ class Settings : BaseActivity() {
     private fun clearCache() {
         // Очищаем кэш приложения
         try {
+            // Очищаем кэш товаров
+            ProductCache.clearAll()
+            
+            // Очищаем файловый кэш приложения
             val cacheDir = cacheDir
             if (cacheDir.exists() && cacheDir.isDirectory) {
                 cacheDir.deleteRecursively()
@@ -315,10 +322,14 @@ class Settings : BaseActivity() {
             .setTitle(getString(R.string.settings_currency))
             .setSingleChoiceItems(currencies, currentIndex) { dialog, which ->
                 val selectedCurrency = currencyValues[which]
-                val prefs = getSharedPreferences("app_settings", MODE_PRIVATE)
-                prefs.edit().putString("currency", selectedCurrency).apply()
+                // Сохраняем через CurrencyUtils
+                CurrencyUtils.saveCurrency(this, selectedCurrency)
+                // Обновляем курсы валют (на случай если они устарели)
+                CurrencyUtils.refreshRates()
                 updateCurrencyDisplay(selectedCurrency)
                 dialog.dismiss()
+                // Перезагружаем активность для обновления всех цен
+                recreate()
             }
             .setNegativeButton(getString(R.string.dialog_button_cancel), null)
             .show()

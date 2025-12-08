@@ -44,6 +44,9 @@ class Main : BaseActivity() {
         // Инициализация RetrofitClient
         RetrofitClient.initialize(this)
         
+        // Инициализация курсов валют (загружает актуальные курсы в фоне)
+        CurrencyUtils.initializeRates(this)
+        
         // Обработка system bars для CoordinatorLayout (без padding снизу, чтобы bottom navigation был виден)
         ViewCompat.setOnApplyWindowInsetsListener(findViewById(R.id.main)) { v, insets ->
             val systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars())

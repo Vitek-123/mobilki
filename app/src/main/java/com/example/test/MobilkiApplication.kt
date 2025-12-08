@@ -12,6 +12,8 @@ class MobilkiApplication : Application() {
         super.onCreate()
         // Применяем сохраненную тему при запуске приложения
         ThemeUtils.applyTheme(this)
+        // Инициализируем курсы валют (загружает актуальные курсы в фоне)
+        CurrencyUtils.initializeRates(this)
     }
     
     override fun attachBaseContext(base: Context) {

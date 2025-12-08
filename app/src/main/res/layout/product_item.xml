@@ -23,9 +23,10 @@
             android:scaleType="centerCrop"
             android:padding="2dp"
             android:layout_margin="6dp"
-            android:importantForAccessibility="no"
-            android:clickable="false"
-            android:focusable="false"
+            android:importantForAccessibility="yes"
+            android:clickable="true"
+            android:focusable="true"
+            android:foreground="?android:attr/selectableItemBackground"
             android:contentDescription="@string/product_image_description" />
 
         <TextView

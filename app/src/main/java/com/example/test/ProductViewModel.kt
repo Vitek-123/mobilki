@@ -23,9 +23,23 @@ class ProductViewModel : ViewModel() {
         currentPage = 0
         isLastPage = false
         viewModelScope.launch {
+            // Проверяем кэш перед загрузкой с сервера
+            val cacheKey = if (searchQuery.isEmpty()) "popular" else searchQuery
+            val cachedProducts = ProductCache.getProducts(cacheKey, 0, PAGE_SIZE)
+            
+            if (cachedProducts != null) {
+                android.util.Log.d("ProductViewModel", "Товары загружены из кэша для запроса: '$searchQuery'")
+                allProducts.clear()
+                allProducts.addAll(cachedProducts)
+                _products.value = Resource.Success(allProducts.toList())
+                isLastPage = searchQuery.isEmpty() || cachedProducts.size < PAGE_SIZE
+                currentPage++
+                return@launch
+            }
+            
             _products.value = Resource.Loading()
             try {
-                android.util.Log.d("ProductViewModel", "Загрузка товаров. Поисковый запрос: '${searchQuery}'")
+                android.util.Log.d("ProductViewModel", "Загрузка товаров с сервера. Поисковый запрос: '${searchQuery}'")
                 
                 val response = if (searchQuery.isEmpty()) {
                     // Если поисковый запрос пустой, загружаем популярные телефоны
@@ -53,6 +67,9 @@ class ProductViewModel : ViewModel() {
                         
                         val convertedProducts = convertApiProductsToAppProducts(productsResponse.products)
                         android.util.Log.d("ProductViewModel", "Конвертировано товаров: ${convertedProducts.size}")
+                        
+                        // Сохраняем в кэш
+                        ProductCache.putProducts(cacheKey, convertedProducts, 0, PAGE_SIZE)
                         
                         allProducts.clear()
                         allProducts.addAll(convertedProducts)
@@ -108,6 +125,9 @@ class ProductViewModel : ViewModel() {
     }
 
     fun refreshProducts(searchQuery: String = "") {
+        // Очищаем кэш перед обновлением
+        val cacheKey = if (searchQuery.isEmpty()) "popular" else searchQuery
+        ProductCache.clearProductsCache(cacheKey)
         loadProducts(searchQuery)
     }
 

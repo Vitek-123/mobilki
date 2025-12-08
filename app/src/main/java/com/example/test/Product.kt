@@ -12,10 +12,15 @@ data class Product(
     val cheapestShop: String,
     val url: String? = null  // URL товара в магазине
 ) {
-    fun getFormattedPrice(): String {
+    fun getFormattedPrice(context: android.content.Context? = null): String {
         return try {
             if (price != null && price > 0) {
-                String.format("%,.0f ₽", price)
+                if (context != null) {
+                    CurrencyUtils.formatPrice(context, price)
+                } else {
+                    // Fallback для случаев, когда контекст недоступен
+                    String.format("%,.0f ₽", price)
+                }
             } else {
                 "Цена не указана"
             }

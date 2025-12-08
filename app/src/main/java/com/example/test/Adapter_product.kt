@@ -35,11 +35,29 @@ class ProductAdapter(
         val buyButton: Button = itemView.findViewById(R.id.Product_Button_product)
 
         init {
-            // Убеждаемся, что ImageView не перехватывает клики
-            productImage.isClickable = false
-            productImage.isFocusable = false
+            // Делаем картинку кликабельной для открытия ссылки на Яндекс.Маркет
+            productImage.isClickable = true
+            productImage.isFocusable = true
             
-            // Обработчик клика на всю карточку
+            // Обработчик клика на картинку - открываем ссылку на Яндекс.Маркет
+            productImage.setOnClickListener { view ->
+                try {
+                    // Предотвращаем всплытие события на itemView
+                    view?.let {
+                        val position = bindingAdapterPosition
+                        if (position != RecyclerView.NO_POSITION && position < productList.size) {
+                            val product = productList[position]
+                            if (product.id > 0 && onItemClickListener != null) {
+                                onItemClickListener.onBuyButtonClick(product)
+                            }
+                        }
+                    }
+                } catch (e: Exception) {
+                    android.util.Log.e("ProductAdapter", "Error handling image click", e)
+                }
+            }
+            
+            // Обработчик клика на всю карточку (кроме картинки и кнопки)
             itemView.setOnClickListener { view ->
                 try {
                     val position = bindingAdapterPosition
@@ -98,7 +116,7 @@ class ProductAdapter(
         loadProductImage(holder.productImage, product.image, context)
 
         // Установка текстовых данных
-        setProductTextData(holder, product)
+        setProductTextData(holder, product, context)
 
         // Настройка кнопки покупки
         setupBuyButton(holder.buyButton, product)
@@ -133,7 +151,7 @@ class ProductAdapter(
         return url.startsWith("http://") || url.startsWith("https://")
     }
 
-    private fun setProductTextData(holder: ProductViewHolder, product: Product) {
+    private fun setProductTextData(holder: ProductViewHolder, product: Product, context: Context) {
         // Название товара
         holder.productTitle.text = product.getFullName()
 
@@ -146,12 +164,12 @@ class ProductAdapter(
         }
 
         // Цена
-        holder.productPrice.text = product.getFormattedPrice()
+        holder.productPrice.text = product.getFormattedPrice(context)
 
         // Установка контент-дескрипшена для доступности
         holder.productTitle.contentDescription = "Название товара: ${product.getFullName()}"
         holder.productDescription.contentDescription = "Описание товара: $description"
-        holder.productPrice.contentDescription = "Цена: ${product.getFormattedPrice()}"
+        holder.productPrice.contentDescription = "Цена: ${product.getFormattedPrice(context)}"
     }
 
     private fun setupBuyButton(button: Button, product: Product) {

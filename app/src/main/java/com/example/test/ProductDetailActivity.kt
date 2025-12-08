@@ -125,7 +125,8 @@ class ProductDetailActivity : AppCompatActivity() {
             startActivity(intent)
         }
         
-        buyYandexButton.setOnClickListener {
+        // Функция для открытия ссылки на Яндекс.Маркет
+        val openYandexMarket = {
             yandexMarketUrl?.let { url ->
                 try {
                     val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
@@ -138,9 +139,28 @@ class ProductDetailActivity : AppCompatActivity() {
                 Toast.makeText(this, "Ссылка на Яндекс.Маркет недоступна", Toast.LENGTH_SHORT).show()
             }
         }
+        
+        // Обработчик клика на кнопку
+        buyYandexButton.setOnClickListener {
+            openYandexMarket()
+        }
+        
+        // Обработчик клика на картинку
+        imageView.setOnClickListener {
+            openYandexMarket()
+        }
     }
 
     private fun loadProductDetails() {
+        // Проверяем кэш перед загрузкой с сервера
+        val cachedProductData = ProductCache.getProductDetail(productId)
+        if (cachedProductData != null) {
+            Log.d("ProductDetail", "Детальная информация о товаре $productId загружена из кэша")
+            displayProduct(cachedProductData)
+            addToViewHistory()
+            return
+        }
+        
         showLoading(true)
         hideError()
 
@@ -155,6 +175,9 @@ class ProductDetailActivity : AppCompatActivity() {
                     if (response.isSuccessful) {
                         val productData = response.body()
                         if (productData != null) {
+                            // Сохраняем в кэш
+                            ProductCache.putProductDetail(productId, productData)
+                            
                             displayProduct(productData)
                             // Добавляем в историю просмотров только после успешной загрузки товара
                             addToViewHistory()
@@ -214,13 +237,13 @@ class ProductDetailActivity : AppCompatActivity() {
         val maxPrice = productData.max_price
 
         minPriceTextView.text = if (minPrice != null) {
-            String.format("%,.0f ₽", minPrice)
+            CurrencyUtils.formatPrice(this, minPrice.toDouble())
         } else {
             "Не указана"
         }
 
         maxPriceTextView.text = if (maxPrice != null) {
-            String.format("%,.0f ₽", maxPrice)
+            CurrencyUtils.formatPrice(this, maxPrice.toDouble())
         } else {
             "Не указана"
         }
@@ -239,8 +262,14 @@ class ProductDetailActivity : AppCompatActivity() {
         if (!yandexMarketUrl.isNullOrEmpty()) {
             buyYandexButton.visibility = View.VISIBLE
             buyYandexButton.isEnabled = true
+            // Делаем картинку кликабельной, если есть URL
+            imageView.isClickable = true
+            imageView.isFocusable = true
         } else {
             buyYandexButton.visibility = View.GONE
+            // Делаем картинку некликабельной, если нет URL
+            imageView.isClickable = false
+            imageView.isFocusable = false
         }
 
         // Кнопка сравнения

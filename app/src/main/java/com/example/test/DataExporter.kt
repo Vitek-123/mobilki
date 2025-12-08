@@ -263,7 +263,7 @@ class DataExporter(private val context: Context) {
     
     private fun formatPrice(price: Float?): String {
         return if (price != null) {
-            String.format(Locale.getDefault(), "%,.0f ₽", price)
+            CurrencyUtils.formatPrice(context, price)
         } else {
             context.getString(R.string.price_not_available)
         }
