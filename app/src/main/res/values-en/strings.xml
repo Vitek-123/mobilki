@@ -20,7 +20,9 @@
     <string name="button_buy">Buy</string>
     <string name="button_buy_in_shops">Buy in %d shops</string>
     <string name="button_buy_in_shop">Buy in %s</string>
-    <string name="buy_in_yandex_market">Buy on Yandex.Market</string>
+    <string name="button_buy_in_yandex_market">Buy on Yandex.Market</string>
+    <string name="buy_in_shop">Buy in shop</string>
+    <string name="find_in_shop">Find in %s</string>
     <string name="description_not_available">Description not specified</string>
     <string name="price_not_available">Price not specified</string>
     <string name="product_name_not_available">No name</string>

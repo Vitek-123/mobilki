@@ -17,8 +17,6 @@ import retrofit2.Call
 import retrofit2.Callback
 import retrofit2.Response
 
-import com.example.test.Main
-
 class Auth : AppCompatActivity() {
 
     private lateinit var authManager: AuthManager
@@ -129,22 +127,26 @@ class Auth : AppCompatActivity() {
 
     private fun showAlertDialog(title: String, message: String) {
         runOnUiThread {
-            AlertDialog.Builder(this@Auth)
-                .setTitle(title)
-                .setMessage(message)
-                .setPositiveButton("OK", null)
-                .create()
-                .show()
+            // Проверяем, что Activity еще жива перед показом диалога
+            if (isFinishing || isDestroyed) {
+                return@runOnUiThread
+            }
+            try {
+                AlertDialog.Builder(this@Auth)
+                    .setTitle(title)
+                    .setMessage(message)
+                    .setPositiveButton("OK", null)
+                    .create()
+                    .show()
+            } catch (e: Exception) {
+                // Если не удалось показать диалог, показываем Toast
+                android.util.Log.e("Auth", "Ошибка показа диалога", e)
+                Toast.makeText(this@Auth, "$title: $message", Toast.LENGTH_LONG).show()
+            }
         }
     }
 
     private fun showLoading(show: Boolean) {
-        // Здесь можно добавить ProgressBar если есть в layout
-        // findViewById<ProgressBar>(R.id.progressBar).visibility = if (show) View.VISIBLE else View.GONE
-        if (show) {
-            // Показать диалог загрузки
-        } else {
-            // Скрыть диалог загрузки
-        }
+        // Loading handled by UI
     }
 }

@@ -241,8 +241,9 @@ class Settings : BaseActivity() {
     
     private fun clearCache() {
         // Очищаем кэш приложения
+        lifecycleScope.launch {
         try {
-            // Очищаем кэш товаров
+                // Очищаем локальный кэш товаров
             ProductCache.clearAll()
             
             // Очищаем файловый кэш приложения
@@ -250,9 +251,18 @@ class Settings : BaseActivity() {
             if (cacheDir.exists() && cacheDir.isDirectory) {
                 cacheDir.deleteRecursively()
             }
+                
+                // Очищаем серверный кэш через API
+                try {
+                    RetrofitClient.apiService.clearAllCache()
+                } catch (e: Exception) {
+                    // Игнорируем ошибку, если сервер недоступен
+                }
+                
             showShortToast(getString(R.string.toast_cache_cleared))
         } catch (e: Exception) {
             showShortToast(getString(R.string.toast_cache_clear_error))
+            }
         }
     }
     

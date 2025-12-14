@@ -29,10 +29,11 @@ interface ApiService {
         @Query("search") search: String? = null
     ): Response<ProductsResponse>
     
-    @GET("/products/popular-phones")
-    suspend fun getPopularPhones(
-        @Query("limit") limit: Int = 3,
-        @Query("use_cache") useCache: Boolean = true
+    @GET("/products/popular")
+    suspend fun getPopularProducts(
+        @Query("limit") limit: Int = 10,
+        @Query("use_cache") useCache: Boolean = true,
+        @Query("category") category: String = "электроника"
     ): Response<ProductsResponse>
     
     @GET("/products/{id}")
@@ -80,4 +81,8 @@ interface ApiService {
     // Статистика
     @GET("/user/stats")
     suspend fun getUserStats(): Response<UserStatsResponse>
+    
+    // Очистка кэша
+    @DELETE("/cache/clear-all")
+    suspend fun clearAllCache(): Response<Map<String, String>>
 }

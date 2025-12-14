@@ -1,7 +1,7 @@
 package com.example.test
 
+import android.content.Intent
 import android.os.Bundle
-import android.util.Log
 import android.widget.Button
 import android.widget.EditText
 import android.widget.TextView
@@ -44,12 +44,10 @@ class Registration : AppCompatActivity() {
         val autoData: TextView = findViewById(R.id.Reg_TextView_Auto)
 
         autoData.setOnClickListener {
-            val intent = android.content.Intent(this, Auth::class.java)
+            val intent = Intent(this, Auth::class.java)
             startActivity(intent)
             finish()
         }
-
-
 
         registerData.setOnClickListener {
             val login = loginData.text.toString().trim()
@@ -95,6 +93,17 @@ class Registration : AppCompatActivity() {
         }
     }
 
+    private fun navigateToMain() {
+        Toast.makeText(
+            this@Registration,
+            "Регистрация успешна, но не удалось выполнить автоматический вход. Войдите вручную.",
+            Toast.LENGTH_LONG
+        ).show()
+        val intent = Intent(this@Registration, Main::class.java)
+        startActivity(intent)
+        finish()
+    }
+
     private fun registerUser(login: String, email: String, password: String) {
         val userRequest = CreateUserRequest(login, email, password)
 
@@ -111,25 +120,14 @@ class Registration : AppCompatActivity() {
                     // После успешной регистрации автоматически логиним пользователя
                     autoLoginAfterRegistration(login, password)
                 } else {
-                    // Пытаемся получить детальное сообщение об ошибке от сервера
                     val errorMessage = try {
                         val errorBody = response.errorBody()?.string()
-                        Log.e("Registration", "Registration failed: ${response.code()}, body: $errorBody")
-                        
                         if (errorBody != null) {
                             try {
-                                // Пытаемся распарсить JSON с деталями ошибки
                                 val gson = Gson()
                                 val jsonObject = gson.fromJson(errorBody, JsonObject::class.java)
-                                val detail = jsonObject.get("detail")?.asString
-                                
-                                if (detail != null) {
-                                    detail
-                                } else {
-                                    getDefaultErrorMessage(response.code())
-                                }
+                                jsonObject.get("detail")?.asString ?: getDefaultErrorMessage(response.code())
                             } catch (e: Exception) {
-                                // Если не удалось распарсить JSON, ищем "detail" в тексте
                                 if (errorBody.contains("\"detail\"")) {
                                     val detailStart = errorBody.indexOf("\"detail\":\"") + 10
                                     val detailEnd = errorBody.indexOf("\"", detailStart)
@@ -146,7 +144,6 @@ class Registration : AppCompatActivity() {
                             getDefaultErrorMessage(response.code())
                         }
                     } catch (e: Exception) {
-                        Log.e("Registration", "Error parsing error body: ${e.message}", e)
                         getDefaultErrorMessage(response.code())
                     }
                     Toast.makeText(this@Registration, errorMessage, Toast.LENGTH_LONG).show()
@@ -159,8 +156,6 @@ class Registration : AppCompatActivity() {
                     "Ошибка сети: ${t.message}",
                     Toast.LENGTH_LONG
                 ).show()
-                Log.e("Registration", "Network error: ${t.message}", t)
-                Log.d("Registration", "Detailed error: ${t.stackTraceToString()}")
             }
         })
     }
@@ -197,48 +192,19 @@ class Registration : AppCompatActivity() {
                             Toast.LENGTH_LONG
                         ).show()
 
-                        // Переходим на главный экран
-                        val intent = android.content.Intent(this@Registration, Main::class.java)
+                        val intent = Intent(this@Registration, Main::class.java)
                         startActivity(intent)
                         finish()
                     } else {
-                        // Если логин не удался, все равно переходим на главный экран
-                        // (пользователь зарегистрирован, но не авторизован)
-                        Toast.makeText(
-                            this@Registration,
-                            "Регистрация успешна, но не удалось выполнить автоматический вход. Войдите вручную.",
-                            Toast.LENGTH_LONG
-                        ).show()
-                        val intent = android.content.Intent(this@Registration, Main::class.java)
-                        startActivity(intent)
-                        finish()
+                        navigateToMain()
                     }
                 } else {
-                    // Если логин не удался, все равно переходим на главный экран
-                    // (пользователь зарегистрирован, но не авторизован)
-                    Log.w("Registration", "Auto-login failed after registration: ${response.code()}")
-                    Toast.makeText(
-                        this@Registration,
-                        "Регистрация успешна, но не удалось выполнить автоматический вход. Войдите вручную.",
-                        Toast.LENGTH_LONG
-                    ).show()
-                    val intent = android.content.Intent(this@Registration, Main::class.java)
-                    startActivity(intent)
-                    finish()
+                    navigateToMain()
                 }
             }
 
             override fun onFailure(call: Call<LoginResponse>, t: Throwable) {
-                // Если логин не удался из-за сети, все равно переходим на главный экран
-                Log.e("Registration", "Auto-login network error: ${t.message}", t)
-                Toast.makeText(
-                    this@Registration,
-                    "Регистрация успешна, но не удалось выполнить автоматический вход. Войдите вручную.",
-                    Toast.LENGTH_LONG
-                ).show()
-                val intent = android.content.Intent(this@Registration, Main::class.java)
-                startActivity(intent)
-                finish()
+                navigateToMain()
             }
         })
     }

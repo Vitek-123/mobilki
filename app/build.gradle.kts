@@ -94,3 +94,19 @@ dependencies {
     // CoordinatorLayout
     implementation ("androidx.coordinatorlayout:coordinatorlayout:1.2.0")
 }
+
+// Create testClasses task for compatibility with standard Gradle projects
+// This task compiles test classes without running them
+afterEvaluate {
+    tasks.register("testClasses") {
+        description = "Assembles test classes"
+        group = "verification"
+        
+        // Depend on all test compilation tasks
+        val testCompileTasks = tasks.matching { task ->
+            task.name.startsWith("compile") && 
+            (task.name.contains("UnitTest") || task.name.contains("AndroidTest"))
+        }
+        dependsOn(testCompileTasks)
+    }
+}

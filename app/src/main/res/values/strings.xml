@@ -20,7 +20,9 @@
     <string name="button_buy">Купить</string>
     <string name="button_buy_in_shops">Купить в %d магазинах</string>
     <string name="button_buy_in_shop">Купить в %s</string>
-    <string name="buy_in_yandex_market">Купить в Яндекс.Маркет</string>
+    <string name="button_buy_in_yandex_market">Купить в Яндекс.Маркете</string>
+    <string name="buy_in_shop">Купить в магазине</string>
+    <string name="find_in_shop">Найти в %s</string>
     <string name="description_not_available">Описание не указано</string>
     <string name="price_not_available">Цена не указана</string>
     <string name="product_name_not_available">Без названия</string>

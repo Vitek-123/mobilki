@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 
 
 class ExternalDataService:
-    """Сервис для работы с внешними источниками данных (использует только mock данные)"""
+    """Сервис для работы с внешними источниками данных (магазины одежды)"""
     
     def __init__(
         self,
@@ -59,31 +59,43 @@ class ExternalDataService:
         
         self.cache_ttl = cache_ttl
         
-        # Инициализация провайдеров
-        self.providers = {}
-        
-        # Пробуем использовать Яндекс.Маркет парсер (Selenium)
-        use_selenium = os.getenv("USE_SELENIUM", "auto").lower()
-        if use_selenium == "auto":
+        # Инициализация Яндекс.Маркет OAuth API
+        self.yandex_api = None
+        oauth_token = os.getenv("YANDEX_OAUTH_TOKEN")
+        if oauth_token:
             try:
-                import selenium
-                use_selenium = "true"
-                logger.info("Selenium обнаружен, будет использован для Яндекс.Маркет")
-            except ImportError:
-                use_selenium = "false"
-                logger.info("Selenium не установлен, Яндекс.Маркет недоступен")
-        
-        use_selenium = use_selenium in ("true", "1", "yes")
-        
-        if use_selenium:
-            try:
-                from yandex_market_selenium import YandexMarketSeleniumParser
-                self.providers["yandex_market"] = YandexMarketSeleniumParser(headless=True)
-                logger.info("✅ Яндекс.Маркет парсер инициализирован (Selenium)")
+                from yandex_market_oauth_api import YandexMarketOAuthAPI
+                campaign_id = os.getenv("YANDEX_MARKET_CAMPAIGN_ID")
+                self.yandex_api = YandexMarketOAuthAPI(oauth_token=oauth_token, campaign_id=campaign_id)
+                
+                # Если campaign_id не указан, пробуем получить автоматически
+                if not campaign_id:
+                    campaigns = self.yandex_api.get_campaigns()
+                    if campaigns:
+                        campaign_id = str(campaigns[0].get("id", ""))
+                        self.yandex_api.campaign_id = campaign_id
+                        logger.info(f"Автоматически получен campaign_id: {campaign_id}")
+                
+                logger.info("✅ Яндекс.Маркет OAuth API инициализирован")
             except Exception as e:
-                logger.warning(f"Не удалось создать Яндекс.Маркет парсер: {e}")
-                self.providers["yandex_market"] = None
-    
+                logger.warning(f"Не удалось инициализировать Яндекс.Маркет OAuth API: {e}")
+        else:
+            logger.info("YANDEX_OAUTH_TOKEN не найден в переменных окружения")
+        
+        # Инициализация парсера (всегда доступен как fallback)
+        try:
+            from yandex_market_parser import YandexMarketParser
+            # Пробуем использовать Selenium если доступен
+            use_selenium = os.getenv("USE_SELENIUM_FOR_PARSING", "false").lower() in ("true", "1", "yes")
+            self.yandex_parser = YandexMarketParser(use_selenium=use_selenium)
+            if use_selenium:
+                logger.info("✅ Яндекс.Маркет парсер инициализирован (с Selenium)")
+            else:
+                logger.info("✅ Яндекс.Маркет парсер инициализирован (без Selenium)")
+        except Exception as e:
+            logger.warning(f"Не удалось инициализировать парсер: {e}")
+            self.yandex_parser = None
+        
     def search_products(
         self,
         query: str,
@@ -91,12 +103,12 @@ class ExternalDataService:
         shops: Optional[List[str]] = None
     ) -> Dict[str, List[ProductData]]:
         """
-        Поиск товаров в Яндекс.Маркет
+        Поиск товаров
         
         Args:
             query: Поисковый запрос
             use_cache: Использовать ли кэш
-            shops: Список магазинов (игнорируется, используется Яндекс.Маркет)
+            shops: Список магазинов (игнорируется)
         
         Returns:
             Словарь {название_магазина: список_товаров}
@@ -115,20 +127,48 @@ class ExternalDataService:
         
         results = {}
         
-        # Используем Яндекс.Маркет
-        yandex_provider = self.providers.get("yandex_market")
-        if yandex_provider:
+        logger.info(f"🔍 Начинаю поиск товаров по запросу: '{query}'")
+        logger.info(f"   Доступные источники: API={self.yandex_api is not None}, Парсер={self.yandex_parser is not None}")
+        
+        # Поиск через Яндекс.Маркет API
+        if self.yandex_api:
             try:
-                products = yandex_provider.search_products(query, limit=50)
+                logger.info(f"📡 Пробую поиск через Яндекс.Маркет API...")
+                products = self.yandex_api.search_products(query=query, limit=30)
                 if products:
-                    results["yandex_market"] = products
-                    logger.info(f"Найдено {len(products)} товаров в Яндекс.Маркет")
+                    results["Яндекс.Маркет"] = products
+                    logger.info(f"✅ Найдено {len(products)} товаров через API")
+                    if products:
+                        logger.info(f"   Примеры: {', '.join([p.title[:40] for p in products[:3]])}")
+                else:
+                    logger.warning("⚠️ API вернул пустой список товаров")
             except Exception as e:
-                logger.error(f"Ошибка поиска в Яндекс.Маркет: {e}", exc_info=True)
-                results["yandex_market"] = []
+                logger.warning(f"⚠️ Ошибка API: {e}, пробую парсер")
+        
+        # Если API не сработал, используем парсер
+        if "Яндекс.Маркет" not in results or not results["Яндекс.Маркет"]:
+            if self.yandex_parser:
+                try:
+                    logger.info(f"🕷️ Пробую поиск через парсер Яндекс.Маркет...")
+                    products = self.yandex_parser.search_products(query=query, limit=30)
+                    if products:
+                        results["Яндекс.Маркет"] = products
+                        logger.info(f"✅ Найдено {len(products)} товаров через парсер")
+                        if products:
+                            logger.info(f"   Примеры: {', '.join([p.title[:40] for p in products[:3]])}")
+                    else:
+                        logger.warning("⚠️ Парсер вернул пустой список товаров")
+                except Exception as e:
+                    logger.error(f"❌ Ошибка парсера: {e}", exc_info=True)
+            else:
+                logger.error("❌ Парсер недоступен! Поиск невозможен.")
+        
+        # Итоговый результат
+        total_found = sum(len(products) for products in results.values())
+        if total_found > 0:
+            logger.info(f"✅ Итого найдено {total_found} товаров из {len(results)} источников")
         else:
-            logger.warning("Яндекс.Маркет парсер недоступен (Selenium не установлен)")
-            results["yandex_market"] = []
+            logger.warning("⚠️ Товары не найдены ни через API, ни через парсер")
         
         # Сохранение в кэш
         if self.redis_enabled and results:
@@ -164,17 +204,41 @@ class ExternalDataService:
         """
         all_results = self.search_products(query, use_cache=use_cache, shops=shops)
         
+        # Логируем результаты из каждого источника
+        total_products = 0
+        for shop_name, products in all_results.items():
+            logger.info(f"Источник '{shop_name}': найдено {len(products)} товаров")
+            total_products += len(products)
+        logger.info(f"Всего товаров из всех источников: {total_products}")
+        
         # Группировка товаров по бренду и модели
         product_groups = {}
         
         for shop_name, products in all_results.items():
+            logger.info(f"Обработка {len(products)} товаров из {shop_name}")
             for product in products:
                 # Используем комбинацию бренда и модели как ключ
-                key = f"{product.brand.lower()}_{product.model.lower()}".strip('_')
+                # Нормализуем ключ: убираем лишние пробелы и приводим к нижнему регистру
+                brand_normalized = product.brand.lower().strip() if product.brand else ""
+                model_normalized = product.model.lower().strip() if product.model else ""
                 
-                if not key or key == '_':
-                    # Если не удалось извлечь бренд/модель, используем название
-                    key = product.title.lower()[:50]
+                # Если бренд "Не указан", пробуем извлечь из названия
+                if brand_normalized in ["не указан", "", "unknown"]:
+                    # Пробуем найти бренд в начале названия
+                    title_lower = product.title.lower()
+                    for known_brand in ["oneplus", "apple", "samsung", "xiaomi", "huawei", "google", "sony", "lg", "asus", "lenovo", "hp", "dell", "acer", "msi", "dyson"]:
+                        if title_lower.startswith(known_brand) or f"смартфон {known_brand}" in title_lower or f"ноутбук {known_brand}" in title_lower:
+                            brand_normalized = known_brand
+                            break
+                
+                key = f"{brand_normalized}_{model_normalized}".strip('_')
+                
+                if not key or key == '_' or len(key) < 3:
+                    # Если не удалось извлечь бренд/модель, используем нормализованное название
+                    title_normalized = product.title.lower().strip()[:50]
+                    # Убираем общие слова для лучшей группировки
+                    title_normalized = title_normalized.replace("смартфон", "").replace("ноутбук", "").strip()
+                    key = title_normalized if title_normalized else product.title.lower()[:50]
                 
                 if key not in product_groups:
                     product_groups[key] = {
@@ -193,12 +257,29 @@ class ExternalDataService:
                 )
                 
                 if not shop_exists:
+                    # Сохраняем URL в кэш для быстрого доступа
+                    if product.url and product.url.strip():
+                        try:
+                            from url_cache_service import URLCacheService
+                            url_cache = URLCacheService(redis_client=self.redis_client if self.redis_enabled else None)
+                            url_cache.save_product_url(
+                                url=product.url,
+                                brand=product.brand,
+                                model=product.model,
+                                title=product.title
+                            )
+                        except Exception as e:
+                            logger.debug(f"Не удалось сохранить URL в кэш: {e}")
+                    
                     product_groups[key]["prices"].append({
                         "shop_name": product.shop_name,
                         "price": product.price,
                         "url": product.url,
                         "scraped_at": product.scraped_at.isoformat() if product.scraped_at else datetime.utcnow().isoformat()
                     })
+                    logger.debug(f"Добавлена цена из {product.shop_name} для товара: {product.title[:50]}...")
+                else:
+                    logger.debug(f"Цена от {product.shop_name} уже существует для товара: {product.title[:50]}...")
         
         # Преобразование в список и сортировка по минимальной цене
         aggregated = []
@@ -206,6 +287,7 @@ class ExternalDataService:
             prices = data["prices"]
             if prices:
                 price_values = [p["price"] for p in prices]
+                shops_list = [p["shop_name"] for p in prices]
                 aggregated.append({
                     "title": data["title"],
                     "brand": data["brand"],
@@ -217,79 +299,121 @@ class ExternalDataService:
                     "max_price": max(price_values),
                     "shops_count": len(prices)
                 })
+                logger.debug(f"Агрегирован товар: {data['title'][:50]}... из магазинов: {shops_list}")
         
         # Сортировка по минимальной цене
         aggregated.sort(key=lambda x: x["min_price"])
         
+        # Возвращаем отсортированные товары
+        # Подсчитываем статистику по магазинам
+        shop_stats = {}
+        for item in aggregated:
+            for price_info in item["prices"]:
+                shop_name = price_info["shop_name"]
+                shop_stats[shop_name] = shop_stats.get(shop_name, 0) + 1
+        
+        logger.info(f"Итого агрегировано {len(aggregated)} уникальных товаров")
+        logger.info(f"Статистика по магазинам: {shop_stats}")
+        logger.info(f"Товаров с ценами из нескольких магазинов: {sum(1 for item in aggregated if len(item['prices']) > 1)}")
+        
         return aggregated
     
-    def get_popular_phones(
+    def get_popular_products(
         self,
-        limit: int = 3,
+        limit: int = 10,
         use_cache: bool = True,
-        fallback_to_other_shops: bool = True
+        category: str = "электроника"
     ) -> List[Dict]:
         """
-        Получение популярных телефонов из Яндекс.Маркет
+        Получение популярных товаров
         
         Args:
-            limit: Количество телефонов (по умолчанию 3)
+            limit: Количество товаров (по умолчанию 10)
             use_cache: Использовать ли кэш
-            fallback_to_other_shops: Игнорируется
+            category: Категория товаров
         
         Returns:
-            Список популярных телефонов с ценами
+            Список популярных товаров с ценами
         """
-        cache_key = f"popular_phones:{limit}"
+        cache_key = f"popular_products:{limit}"
         
         # Проверка кэша
         if use_cache and self.redis_enabled:
             try:
                 cached_data = self.redis_client.get(cache_key)
                 if cached_data:
-                    logger.info("Популярные телефоны найдены в кэше")
+                    logger.info(f"✅ Популярные товары найдены в кэше")
                     return json.loads(cached_data)
             except Exception as e:
                 logger.error(f"Ошибка чтения из кэша: {e}")
         
-        # Пробуем получить из Яндекс.Маркет
-        phones = []
-        yandex_provider = self.providers.get("yandex_market")
+        # Получаем товары из Яндекс.Маркет
+        products = []
         
-        if yandex_provider:
+        # Проверяем доступность API и парсера
+        logger.info(f"🔍 Проверка доступности источников данных:")
+        logger.info(f"   - yandex_api: {'✅ Доступен' if self.yandex_api else '❌ Недоступен'}")
+        logger.info(f"   - yandex_parser: {'✅ Доступен' if self.yandex_parser else '❌ Недоступен'}")
+        
+        # Сначала пробуем через API (если доступен)
+        if self.yandex_api:
             try:
-                phones = yandex_provider.get_popular_phones(limit=limit)
-                logger.info(f"Получено {len(phones)} телефонов из Яндекс.Маркет")
+                logger.info(f"📡 Пробую получить товары через Яндекс.Маркет API (категория: {category}, лимит: {limit})")
+                products_data = self.yandex_api.get_popular_products(category=category, limit=limit)
+                if products_data:
+                    products = products_data
+                    logger.info(f"✅ Получено {len(products)} товаров через API")
+                    if products:
+                        logger.info(f"   Примеры товаров: {', '.join([p.title[:30] for p in products[:3]])}")
+                else:
+                    logger.warning("⚠️ API вернул пустой список, пробую парсер")
             except Exception as e:
-                logger.warning(f"Ошибка получения телефонов из Яндекс.Маркет: {e}")
-                phones = []
+                logger.warning(f"⚠️ Ошибка API: {e}, пробую парсер", exc_info=True)
+        else:
+            logger.info("ℹ️ Яндекс.Маркет API недоступен (YANDEX_OAUTH_TOKEN не настроен), пробую парсер")
         
-        # Если не получилось, используем mock данные
-        if not phones:
-            logger.warning("Не удалось получить телефоны из Яндекс.Маркет, используем mock данные")
-            phones = self._get_mock_phones(limit=limit)
+        # Если API не сработал или недоступен, используем парсер
+        if not products and self.yandex_parser:
+            try:
+                logger.info(f"🕷️ Получение товаров через парсер (категория: {category}, лимит: {limit})")
+                products_data = self.yandex_parser.get_popular_products(category=category, limit=limit)
+                if products_data:
+                    products = products_data
+                    logger.info(f"✅ Получено {len(products)} товаров через парсер")
+                    if products:
+                        logger.info(f"   Примеры товаров: {', '.join([p.title[:30] for p in products[:3]])}")
+                else:
+                    logger.warning("⚠️ Парсер вернул пустой список товаров")
+            except Exception as e:
+                logger.error(f"❌ Ошибка парсера: {e}", exc_info=True)
+        elif not products and not self.yandex_parser:
+            logger.error("❌ Парсер недоступен! Товары из Яндекс.Маркет не могут быть получены.")
+        
+        if not products:
+            logger.warning("⚠️ Не удалось получить товары ни через API, ни через парсер")
         
         # Преобразуем в формат для API
         result = []
-        for phone in phones:
+        for product in products:
+            brand = product.brand if product.brand is not None else "Не указан"
+            model = product.model if product.model is not None else "Не указана"
+            
             result.append({
-                "title": phone.title,
-                "brand": phone.brand,
-                "model": phone.model,
-                "image": phone.image,
-                "description": phone.description,
+                "title": product.title,
+                "brand": brand,
+                "model": model,
+                "image": product.image,
+                "description": product.description,
                 "prices": [{
-                    "shop_name": phone.shop_name,
-                    "price": phone.price,
-                    "url": phone.url,
-                    "scraped_at": datetime.utcnow().isoformat()
+                    "shop_name": product.shop_name,
+                    "price": product.price,
+                    "url": product.url,
+                    "scraped_at": product.scraped_at.isoformat() if product.scraped_at else datetime.utcnow().isoformat()
                 }],
-                "min_price": phone.price,
-                "max_price": phone.price,
+                "min_price": product.price,
+                "max_price": product.price,
                 "shops_count": 1
             })
-        
-        logger.info(f"Сформировано {len(result)} товаров для ответа (mock данные)")
         
         # Сохранение в кэш
         if self.redis_enabled and result:
@@ -299,50 +423,11 @@ class ExternalDataService:
                     min(self.cache_ttl, 3600),  # Максимум 1 час для популярных товаров
                     json.dumps(result, default=str)
                 )
-                logger.info(f"Популярные телефоны сохранены в кэш")
+                logger.info(f"Популярные товары сохранены в кэш")
             except Exception as e:
                 logger.error(f"Ошибка записи в кэш: {e}")
         
         return result
-    
-    def _get_mock_phones(self, limit: int = 3) -> List[ProductData]:
-        """Возвращает тестовые данные популярных телефонов для демонстрации (fallback)"""
-        mock_phones = [
-            ProductData(
-                title="Смартфон Apple iPhone 15 128GB",
-                brand="Apple",
-                model="iPhone 15",
-                price=79990.0,
-                shop_name="Mock Shop",
-                url="https://example.com/iphone15",
-                image="https://via.placeholder.com/400x400/000000/FFFFFF?text=iPhone+15",
-                description="Смартфон Apple iPhone 15 с дисплеем 6.1 дюйма, процессором A16 Bionic и камерой 48 МП",
-                product_id="mock_iphone15"
-            ),
-            ProductData(
-                title="Смартфон Samsung Galaxy S23 256GB",
-                brand="Samsung",
-                model="Galaxy S23",
-                price=69990.0,
-                shop_name="Mock Shop",
-                url="https://example.com/galaxy-s23",
-                image="https://via.placeholder.com/400x400/1428A0/FFFFFF?text=Galaxy+S23",
-                description="Смартфон Samsung Galaxy S23 с камерой 50 МП, процессором Snapdragon 8 Gen 2",
-                product_id="mock_samsung_s23"
-            ),
-            ProductData(
-                title="Смартфон Xiaomi 13 256GB",
-                brand="Xiaomi",
-                model="13",
-                price=49990.0,
-                shop_name="Mock Shop",
-                url="https://example.com/xiaomi13",
-                image="https://via.placeholder.com/400x400/FF6900/FFFFFF?text=Xiaomi+13",
-                description="Смартфон Xiaomi 13 с процессором Snapdragon 8 Gen 2, камерой Leica 50 МП",
-                product_id="mock_xiaomi13"
-            ),
-        ]
-        return mock_phones[:limit]
     
     def _serialize_products(self, results: Dict[str, List[ProductData]]) -> Dict:
         """Сериализация продуктов для кэша"""
@@ -446,18 +531,32 @@ class ExternalDataService:
         
         return prices
     
-    def clear_cache(self, pattern: str = "*"):
-        """Очистка кэша"""
+    def clear_cache(self, pattern: str = "*") -> int:
+        """
+        Очистка кэша
+        
+        Args:
+            pattern: Паттерн для поиска ключей (по умолчанию "*" - все ключи)
+        
+        Returns:
+            Количество удаленных ключей
+        """
         if not self.redis_enabled:
-            return
+            logger.warning("Redis не доступен, очистка кэша невозможна")
+            return 0
         
         try:
             keys = self.redis_client.keys(pattern)
             if keys:
-                self.redis_client.delete(*keys)
-                logger.info(f"Очищено {len(keys)} ключей из кэша")
+                deleted = self.redis_client.delete(*keys)
+                logger.info(f"✅ Очищено {deleted} ключей из кэша (паттерн: {pattern})")
+                return deleted
+            else:
+                logger.info(f"ℹ️ Ключи не найдены (паттерн: {pattern})")
+                return 0
         except Exception as e:
-            logger.error(f"Ошибка очистки кэша: {e}")
+            logger.error(f"❌ Ошибка очистки кэша: {e}")
+            return 0
     
     def get_cache_stats(self) -> Dict:
         """Получение статистики кэша"""

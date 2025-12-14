@@ -34,7 +34,8 @@ data class ProductResponse(
     val description: String?,
     val brand: String?,
     val model: String?,
-    val image: String?
+    val image: String?,
+    val url: String? = null  // URL товара (для товаров из Яндекс.Маркет)
 )
 
 data class PriceResponse(

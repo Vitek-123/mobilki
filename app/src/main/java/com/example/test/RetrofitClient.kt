@@ -10,7 +10,10 @@ import java.util.concurrent.TimeUnit
 
 object RetrofitClient {
 
-    private const val BASE_URL = "http://172.20.10.2:8000/" // TODO: Вынести в config
+    // Для переключения между сетями: закомментируйте активную строку и раскомментируйте нужную
+//    private const val BASE_URL = "http://172.20.10.2:8000/"
+//    private const val BASE_URL = "http://10.201.241.230:8000/"
+    private const val BASE_URL = "http://192.168.0.16:8000/"
 
     // Определяем флаг отладки вручную
     private const val DEBUG = true // Меняйте на false для продакшена
@@ -35,9 +38,9 @@ object RetrofitClient {
 
     private val okHttpClient = OkHttpClient.Builder()
         .addInterceptor(loggingInterceptor)
-        .connectTimeout(60, TimeUnit.SECONDS)  // Увеличено до 60 секунд
-        .readTimeout(60, TimeUnit.SECONDS)     // Увеличено до 60 секунд
-        .writeTimeout(60, TimeUnit.SECONDS)    // Увеличено до 60 секунд
+        .connectTimeout(180, TimeUnit.SECONDS)  // Увеличено до 180 секунд для парсинга
+        .readTimeout(300, TimeUnit.SECONDS)     // Увеличено до 300 секунд (5 минут) для парсинга нескольких источников
+        .writeTimeout(60, TimeUnit.SECONDS)     // 60 секунд для записи достаточно
         .addInterceptor { chain ->
             val originalRequest = chain.request()
 

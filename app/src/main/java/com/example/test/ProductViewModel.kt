@@ -4,7 +4,11 @@ import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class ProductViewModel : ViewModel() {
 
@@ -28,7 +32,6 @@ class ProductViewModel : ViewModel() {
             val cachedProducts = ProductCache.getProducts(cacheKey, 0, PAGE_SIZE)
             
             if (cachedProducts != null) {
-                android.util.Log.d("ProductViewModel", "Товары загружены из кэша для запроса: '$searchQuery'")
                 allProducts.clear()
                 allProducts.addAll(cachedProducts)
                 _products.value = Resource.Success(allProducts.toList())
@@ -39,15 +42,9 @@ class ProductViewModel : ViewModel() {
             
             _products.value = Resource.Loading()
             try {
-                android.util.Log.d("ProductViewModel", "Загрузка товаров с сервера. Поисковый запрос: '${searchQuery}'")
-                
                 val response = if (searchQuery.isEmpty()) {
-                    // Если поисковый запрос пустой, загружаем популярные телефоны
-                    android.util.Log.d("ProductViewModel", "Запрос популярных телефонов...")
-                    RetrofitClient.apiService.getPopularPhones(limit = 3, useCache = true)
+                    RetrofitClient.apiService.getPopularProducts(limit = 10, useCache = true, category = "электроника")
                 } else {
-                    // Иначе используем обычный поиск
-                    android.util.Log.d("ProductViewModel", "Обычный поиск: '$searchQuery'")
                     RetrofitClient.apiService.getProductsSuspend(
                         skip = currentPage * PAGE_SIZE,
                         limit = PAGE_SIZE,
@@ -55,39 +52,34 @@ class ProductViewModel : ViewModel() {
                     )
                 }
 
-                android.util.Log.d("ProductViewModel", "Ответ получен. Статус: ${response.code()}, Успешно: ${response.isSuccessful}")
-
                 if (response.isSuccessful) {
                     val productsResponse = response.body()
-                    android.util.Log.d("ProductViewModel", "Тело ответа: $productsResponse")
                     
                     if (productsResponse != null) {
-                        android.util.Log.d("ProductViewModel", "Количество товаров в ответе: ${productsResponse.products.size}")
-                        android.util.Log.d("ProductViewModel", "Total: ${productsResponse.total}")
+                        // Конвертируем товары параллельно на фоновом потоке
+                        val convertedProducts = withContext(Dispatchers.Default) {
+                            convertApiProductsToAppProductsParallel(productsResponse.products)
+                        }
                         
-                        val convertedProducts = convertApiProductsToAppProducts(productsResponse.products)
-                        android.util.Log.d("ProductViewModel", "Конвертировано товаров: ${convertedProducts.size}")
-                        
-                        // Сохраняем в кэш
-                        ProductCache.putProducts(cacheKey, convertedProducts, 0, PAGE_SIZE)
-                        
-                        allProducts.clear()
-                        allProducts.addAll(convertedProducts)
-                        _products.value = Resource.Success(allProducts.toList())
-                        // Для популярных телефонов считаем, что это последняя страница
-                        isLastPage = searchQuery.isEmpty() || convertedProducts.size < PAGE_SIZE
-                        currentPage++
+                        // Сохраняем в кэш и обновляем UI на главном потоке
+                        withContext(Dispatchers.Main) {
+                            ProductCache.putProducts(cacheKey, convertedProducts, 0, PAGE_SIZE)
+                            
+                            allProducts.clear()
+                            allProducts.addAll(convertedProducts)
+                            _products.value = Resource.Success(allProducts.toList())
+                            // Для популярных товаров считаем, что это последняя страница
+                            isLastPage = searchQuery.isEmpty() || convertedProducts.size < PAGE_SIZE
+                            currentPage++
+                        }
                     } else {
-                        android.util.Log.e("ProductViewModel", "Пустой ответ от сервера")
                         _products.value = Resource.Error("Пустой ответ от сервера")
                     }
                 } else {
-                    val errorBody = response.errorBody()?.string()
-                    android.util.Log.e("ProductViewModel", "Ошибка загрузки: ${response.code()}, Тело: $errorBody")
                     _products.value = Resource.Error("Ошибка загрузки: ${response.code()}")
                 }
             } catch (t: Throwable) {
-                android.util.Log.e("ProductViewModel", "Исключение при загрузке товаров", t)
+                android.util.Log.e("ProductViewModel", "Ошибка загрузки товаров: ${t.message}")
                 _products.value = Resource.Error("Не удалось загрузить товары: ${t.message}")
             }
         }
@@ -96,7 +88,7 @@ class ProductViewModel : ViewModel() {
     fun loadMoreProducts(searchQuery: String = "") {
         if (isLastPage) return
 
-        viewModelScope.launch {
+        viewModelScope.launch(Dispatchers.IO) {
             try {
                 val response = RetrofitClient.apiService.getProductsSuspend(
                     skip = currentPage * PAGE_SIZE,
@@ -107,15 +99,56 @@ class ProductViewModel : ViewModel() {
                 if (response.isSuccessful) {
                     val productsResponse = response.body()
                     if (productsResponse != null) {
-                        val convertedProducts = convertApiProductsToAppProducts(productsResponse.products)
-                        allProducts.addAll(convertedProducts)
-                        _products.value = Resource.Success(allProducts.toList())
-                        isLastPage = convertedProducts.size < PAGE_SIZE
-                        currentPage++
+                        // Конвертируем товары параллельно на фоновом потоке
+                        val convertedProducts = withContext(Dispatchers.Default) {
+                            convertApiProductsToAppProductsParallel(productsResponse.products)
+                        }
+                        
+                        // Обновляем UI на главном потоке
+                        withContext(Dispatchers.Main) {
+                            allProducts.addAll(convertedProducts)
+                            _products.value = Resource.Success(allProducts.toList())
+                            isLastPage = convertedProducts.size < PAGE_SIZE
+                            currentPage++
+                        }
                     }
                 }
             } catch (t: Throwable) {
                 // Silent fail for pagination
+            }
+        }
+    }
+    
+    /**
+     * Предзагружает следующую страницу товаров в фоне
+     */
+    fun preloadNextPage(searchQuery: String = "") {
+        if (isLastPage) return
+        
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                // Загружаем следующую страницу в фоне
+                val response = RetrofitClient.apiService.getProductsSuspend(
+                    skip = (currentPage + 1) * PAGE_SIZE,
+                    limit = PAGE_SIZE,
+                    search = if (searchQuery.isNotEmpty()) searchQuery else null
+                )
+                
+                if (response.isSuccessful) {
+                    val productsResponse = response.body()
+                    if (productsResponse != null) {
+                        // Конвертируем и кэшируем товары
+                        val convertedProducts = withContext(Dispatchers.Default) {
+                            convertApiProductsToAppProductsParallel(productsResponse.products)
+                        }
+                        
+                        // Сохраняем в кэш для быстрого доступа
+                        val cacheKey = if (searchQuery.isEmpty()) "popular" else searchQuery
+                        ProductCache.putProducts(cacheKey, convertedProducts, (currentPage + 1) * PAGE_SIZE, PAGE_SIZE)
+                    }
+                }
+            } catch (t: Throwable) {
+                // Silent fail for preload
             }
         }
     }
@@ -136,48 +169,61 @@ class ProductViewModel : ViewModel() {
         isLastPage = false
         allProducts.clear()
     }
-
-    private fun convertApiProductsToAppProducts(apiProducts: List<ProductWithPricesResponse>): List<Product> {
-        android.util.Log.d("ProductViewModel", "Конвертация ${apiProducts.size} товаров")
+    
+    /**
+     * Конвертирует товары параллельно для ускорения обработки
+     */
+    private suspend fun convertApiProductsToAppProductsParallel(apiProducts: List<ProductWithPricesResponse>): List<Product> = withContext(Dispatchers.Default) {
         
-        return apiProducts.mapNotNull { apiProduct ->
-            try {
-                val product = apiProduct.product
-                val prices = apiProduct.prices
+        // Создаем задачи для параллельной конвертации
+        val deferredProducts = apiProducts.map { apiProduct ->
+            async {
+                convertSingleProduct(apiProduct)
+            }
+        }
+        
+        // Ждем завершения всех задач и фильтруем null значения
+        deferredProducts.awaitAll().filterNotNull()
+    }
+    
+    /**
+     * Конвертирует один товар из API формата в формат приложения
+     */
+    private fun convertSingleProduct(apiProduct: ProductWithPricesResponse): Product? {
+        return try {
+            val product = apiProduct.product
+            val prices = apiProduct.prices
 
-                android.util.Log.d("ProductViewModel", "Товар: ${product.title}, Цен: ${prices.size}")
-
-                val cheapestPriceInfo = if (prices.isNotEmpty()) {
-                    prices.minByOrNull { it.price }
-                } else {
-                    null
-                }
-                
-                val minPrice: Float = cheapestPriceInfo?.price ?: apiProduct.min_price ?: 0.0f
-                val cheapestShop = cheapestPriceInfo?.shop_name ?: "Не указан"
-                // Получаем URL самого дешевого товара
-                val productUrl = cheapestPriceInfo?.url
-
-                val convertedProduct = Product(
-                    id = product.id_product,
-                    title = product.title ?: "${product.brand} ${product.model}",
-                    brand = product.brand ?: "Не указан",
-                    model = product.model ?: "Не указана",
-                    description = product.description ?: "Описание не указано",
-                    image = product.image ?: "https://via.placeholder.com/600x400?text=No+Image",
-                    price = minPrice,
-                    shopCount = prices.size,
-                    cheapestShop = cheapestShop,
-                    url = productUrl
-                )
-                
-                android.util.Log.d("ProductViewModel", "Конвертирован товар: ${convertedProduct.title}, цена: ${convertedProduct.price}")
-                convertedProduct
-            } catch (e: Exception) {
-                android.util.Log.e("ProductViewModel", "Ошибка конвертации товара", e)
-                e.printStackTrace()
+            val cheapestPriceInfo = if (prices.isNotEmpty()) {
+                prices.minByOrNull { it.price }
+            } else {
                 null
             }
+            
+            val minPrice: Float = cheapestPriceInfo?.price ?: apiProduct.min_price ?: 0.0f
+            val cheapestShop = cheapestPriceInfo?.shop_name ?: "Не указан"
+            
+            // Получаем URL: сначала пробуем взять из product.url (для товаров из Яндекс.Маркет),
+            // затем у самого дешевого товара, если его нет - берем первый доступный URL из всех цен
+            val productUrl = product.url
+                ?: cheapestPriceInfo?.url 
+                ?: prices.firstOrNull { !it.url.isNullOrEmpty() }?.url
+
+            Product(
+                id = product.id_product,
+                title = product.title ?: "${product.brand} ${product.model}",
+                brand = product.brand ?: "Не указан",
+                model = product.model ?: "Не указана",
+                description = product.description ?: "Описание не указано",
+                image = product.image ?: "https://via.placeholder.com/600x400?text=No+Image",
+                price = minPrice,
+                shopCount = prices.size,
+                cheapestShop = cheapestShop,
+                url = productUrl
+            )
+        } catch (e: Exception) {
+            android.util.Log.e("ProductViewModel", "Ошибка конвертации товара", e)
+            null
         }
     }
 }

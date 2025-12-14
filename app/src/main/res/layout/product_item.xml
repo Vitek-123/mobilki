@@ -3,26 +3,27 @@
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:layout_margin="6dp"
+    android:layout_margin="4dp"
     android:importantForAccessibility="yes"
     app:cardCornerRadius="16dp"
-    app:cardElevation="4dp"
-    app:cardBackgroundColor="#02838C">
+    app:cardElevation="4dp">
 
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="vertical"
-        android:paddingBottom="12dp"
-        android:importantForAccessibility="yes">
+        android:paddingBottom="3dp"
+        android:importantForAccessibility="yes"
+        android:focusable="false"
+        android:background="?attr/colorPrimary">
 
         <ImageView
             android:id="@+id/Product_imageView_product"
             android:layout_width="match_parent"
-            android:layout_height="180dp"
+            android:layout_height="220dp"
             android:scaleType="centerCrop"
-            android:padding="2dp"
-            android:layout_margin="6dp"
+            android:padding="1dp"
+            android:layout_margin="4dp"
             android:importantForAccessibility="yes"
             android:clickable="true"
             android:focusable="true"
@@ -33,39 +34,25 @@
             android:id="@+id/Product_TextView_title"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:paddingHorizontal="16dp"
-            android:paddingVertical="6dp"
-            android:textSize="20sp"
-            android:textColor="#FFFFFF"
+            android:paddingHorizontal="8dp"
+            android:paddingVertical="2dp"
+            android:textSize="18sp"
+            android:textColor="?attr/colorOnPrimary"
             android:importantForAccessibility="yes"
             android:clickable="false"
             android:focusable="false"
             android:text="TextView" />
 
-        <TextView
-            android:id="@+id/Product_TextView_desc"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:paddingHorizontal="16dp"
-            android:paddingVertical="2dp"
-            android:textSize="11sp"
-            android:textColor="#E0E0E0"
-            android:maxLines="1"
-            android:ellipsize="end"
-            android:importantForAccessibility="yes"
-            android:clickable="false"
-            android:focusable="false"
-            android:text="TextView" />
 
         <TextView
             android:id="@+id/Product_TextView_price"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:paddingHorizontal="16dp"
-            android:paddingVertical="4dp"
-            android:textSize="16sp"
+            android:paddingHorizontal="8dp"
+            android:paddingVertical="0dp"
+            android:textSize="14sp"
             android:gravity="end"
-            android:textColor="#FFFFFF"
+            android:textColor="?attr/colorOnPrimary"
             android:textStyle="bold"
             android:importantForAccessibility="yes"
             android:clickable="false"
@@ -74,15 +61,19 @@
 
         <Button
             android:id="@+id/Product_Button_product"
-            android:layout_width="180dp"
-            android:layout_height="wrap_content"
+            android:layout_width="match_parent"
+            android:layout_height="35dp"
             android:layout_gravity="center"
-            android:layout_marginTop="6dp"
+            android:layout_marginHorizontal="2dp"
+            android:layout_marginTop="0dp"
             android:background="@drawable/rounded_button"
-            android:textColor="#FFFFFF"
+            android:textColor="?attr/colorOnPrimary"
             android:textSize="12sp"
+            android:singleLine="true"
+            android:ellipsize="none"
             android:importantForAccessibility="yes"
             android:focusable="true"
+            android:contentDescription="@string/button_product"
             android:text="@string/button_product" />
 
     </LinearLayout>

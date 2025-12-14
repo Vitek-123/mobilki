@@ -3,8 +3,6 @@ package com.example.test
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
-import android.view.Menu
-import android.view.MenuItem
 import android.view.View
 import android.widget.ProgressBar
 import android.widget.SearchView
@@ -15,14 +13,8 @@ import androidx.activity.viewModels
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
-import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
-import retrofit2.Response
 
 class Main : BaseActivity() {
     
@@ -35,6 +27,7 @@ class Main : BaseActivity() {
     private lateinit var searchView: SearchView
     
     private var currentSearchQuery = ""
+    private var isLoadingMore = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -48,18 +41,22 @@ class Main : BaseActivity() {
         CurrencyUtils.initializeRates(this)
         
         // Обработка system bars для CoordinatorLayout (без padding снизу, чтобы bottom navigation был виден)
-        ViewCompat.setOnApplyWindowInsetsListener(findViewById(R.id.main)) { v, insets ->
-            val systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
-            v.setPadding(systemBars.left, systemBars.top, systemBars.right, 0)
-            insets
+        findViewById<View>(R.id.main)?.let { mainView ->
+            ViewCompat.setOnApplyWindowInsetsListener(mainView) { v, insets ->
+                val systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
+                v.setPadding(systemBars.left, systemBars.top, systemBars.right, 0)
+                insets
+            }
         }
         
         // Обработка system bars для контента (учитываем bottom navigation)
-        ViewCompat.setOnApplyWindowInsetsListener(findViewById(R.id.content_container)) { v, insets ->
-            val systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
-            // Padding снизу уже установлен в layout (72dp для bottom navigation)
-            v.setPadding(systemBars.left, systemBars.top, systemBars.right, v.paddingBottom + systemBars.bottom)
-            insets
+        findViewById<View>(R.id.content_container)?.let { contentView ->
+            ViewCompat.setOnApplyWindowInsetsListener(contentView) { v, insets ->
+                val systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
+                // Padding снизу уже установлен в layout (72dp для bottom navigation)
+                v.setPadding(systemBars.left, systemBars.top, systemBars.right, v.paddingBottom + systemBars.bottom)
+                insets
+            }
         }
 
         setupBottomNavigation(R.id.navigation_home)
@@ -83,6 +80,10 @@ class Main : BaseActivity() {
     }
 
     private fun setupRecyclerView() {
+        // Оптимизация RecyclerView для лучшей производительности
+        recyclerView.setHasFixedSize(true) // Если размер элементов фиксированный
+        recyclerView.setItemViewCacheSize(20) // Увеличиваем кэш представлений для плавной прокрутки
+        
         adapter = ProductAdapter(
             productList = emptyList(),
             context = this,
@@ -104,38 +105,129 @@ class Main : BaseActivity() {
                 }
 
                 override fun onBuyButtonClick(product: Product) {
-                    // Открываем URL товара в браузере
-                    android.util.Log.d("Main", "Buy button clicked for product: ${product.title}, URL: ${product.url}")
+                    // Определяем, является ли товар товаром из Яндекс.Маркета
+                    val isYandexMarketProduct = isYandexMarketProduct(product)
                     
-                    // Если URL уже есть, открываем его
-                    if (!product.url.isNullOrEmpty()) {
-                        openProductUrl(product.url)
-                        return
+                    if (isYandexMarketProduct) {
+                        // Товар из Яндекс.Маркет - открываем URL из product
+                        // URL уже извлечен из prices при конвертации в ProductViewModel
+                        val productUrl = product.url
+                        
+                        if (!productUrl.isNullOrEmpty()) {
+                            val url = productUrl.trim()
+                            
+                            // Проверяем, что это валидный URL Яндекс.Маркет
+                            val urlLower = url.lowercase()
+                            val isYandexMarketUrl = urlLower.contains("market.yandex.ru") || 
+                                                   urlLower.contains("yandex.ru/product") ||
+                                                   urlLower.contains("yandex.ru/catalog") ||
+                                                   url.startsWith("https://market.yandex.ru") ||
+                                                   url.startsWith("http://market.yandex.ru")
+                            
+                            if (isYandexMarketUrl) {
+                                try {
+                                    // Нормализуем URL
+                                    val finalUrl = when {
+                                        url.startsWith("http://") || url.startsWith("https://") -> url
+                                        url.startsWith("/") -> "https://market.yandex.ru$url"
+                                        else -> "https://market.yandex.ru/$url"
+                                    }
+                                    
+                                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse(finalUrl))
+                                    startActivity(intent)
+                                    return
+                                } catch (e: Exception) {
+                                    android.util.Log.e("Main", "Ошибка открытия URL Яндекс.Маркет", e)
+                                    Toast.makeText(this@Main, "Не удалось открыть Яндекс.Маркет", Toast.LENGTH_SHORT).show()
+                                }
+                            }
+                        }
+                        
+                        // Fallback: открываем поиск в Яндекс.Маркет
+                        val searchQuery = if (product.brand != null && product.model != null &&
+                                            product.brand != "Не указан" && product.model != "Не указана") {
+                            "${product.brand} ${product.model}".trim()
+                        } else {
+                            product.title ?: ""
+                        }
+                        
+                        if (searchQuery.isNotEmpty()) {
+                            // Формируем поисковый URL Яндекс.Маркет
+                            val searchParams = mutableListOf<String>()
+                            searchParams.add("text=${android.net.Uri.encode(searchQuery)}")
+                            
+                            // Добавляем фильтр по бренду если есть
+                            if (product.brand != null && product.brand != "Не указан" && 
+                                !searchQuery.contains(product.brand, ignoreCase = true)) {
+                                searchParams.add("vendor=${android.net.Uri.encode(product.brand)}")
+                            }
+                            
+                            // Сортировка по цене
+                            searchParams.add("how=aprice")
+                            
+                            val searchUrl = "https://market.yandex.ru/search?${searchParams.joinToString("&")}"
+                            
+                            try {
+                                val intent = Intent(Intent.ACTION_VIEW, Uri.parse(searchUrl))
+                                startActivity(intent)
+                                return
+                            } catch (e: Exception) {
+                                Toast.makeText(this@Main, "Не удалось открыть Яндекс.Маркет", Toast.LENGTH_SHORT).show()
+                                return
+                            }
+                        } else {
+                            // Если нет поискового запроса, открываем главную страницу Яндекс.Маркет
+                            try {
+                                val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://market.yandex.ru"))
+                                startActivity(intent)
+                                return
+                            } catch (e: Exception) {
+                                Toast.makeText(this@Main, "Не удалось открыть Яндекс.Маркет", Toast.LENGTH_SHORT).show()
+                                return
+                            }
+                        }
+                    } else {
+                        // Товар из БД - открываем URL из listings (таблица listings, атрибут url)
+                        if (!product.url.isNullOrEmpty()) {
+                            val url = product.url.trim()
+                            try {
+                                // Нормализуем URL для БД
+                                val finalUrl = when {
+                                    url.startsWith("http://") || url.startsWith("https://") -> url
+                                    url.startsWith("/") -> {
+                                        // Относительный URL - определяем домен по магазину или используем базовый
+                                        if (product.cheapestShop.contains("biggeek", ignoreCase = true)) {
+                                            "https://biggeek.ru$url"
+                                        } else {
+                                            "https://$url"
+                                        }
+                                    }
+                                    else -> "https://$url"
+                                }
+                                
+                                val intent = Intent(Intent.ACTION_VIEW, Uri.parse(finalUrl))
+                                startActivity(intent)
+                                return
+                            } catch (e: Exception) {
+                                Toast.makeText(this@Main, "Не удалось открыть ссылку", Toast.LENGTH_SHORT).show()
+                                return
+                            }
+                        }
+                        
+                        // Если URL из listings отсутствует, открываем детальную страницу товара
+                        if (product.id > 0) {
+                            try {
+                                val intent = Intent(this@Main, ProductDetailActivity::class.java)
+                                intent.putExtra("product_id", product.id)
+                                startActivity(intent)
+                            } catch (e: Exception) {
+                                android.util.Log.e("Main", "Ошибка открытия детальной страницы", e)
+                                Toast.makeText(this@Main, getString(R.string.error_opening_product, e.message ?: ""), Toast.LENGTH_SHORT).show()
+                            }
+                        } else {
+                            Toast.makeText(this@Main, "Ссылка на товар недоступна", Toast.LENGTH_SHORT).show()
+                        }
                     }
-                    
-                    // Если URL нет, ищем товар по названию в Яндекс.Маркет
-                    searchProductAndOpen(product)
-                }
-                
-                private fun openProductUrl(url: String) {
-                    try {
-                        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
-                        startActivity(intent)
-                    } catch (e: Exception) {
-                        android.util.Log.e("Main", "Ошибка открытия URL", e)
-                        Toast.makeText(this@Main, getString(R.string.error_opening_url), Toast.LENGTH_SHORT).show()
-                    }
-                }
-                
-                private fun searchProductAndOpen(product: Product) {
-                    // Формируем поисковый запрос из названия товара
-                    val searchQuery = product.title ?: "${product.brand} ${product.model}".trim()
-                    
-                    android.util.Log.d("Main", "Открываем поиск в Яндекс.Маркет: $searchQuery")
-                    
-                    // Открываем поиск в Яндекс.Маркет с названием товара
-                    val searchUrl = "https://market.yandex.ru/search?text=${Uri.encode(searchQuery)}"
-                    openProductUrl(searchUrl)
                 }
             }
         )
@@ -153,8 +245,18 @@ class Main : BaseActivity() {
                 val firstVisibleItemPosition = layoutManager?.findFirstVisibleItemPosition() ?: 0
 
                 // Загружаем следующую страницу, когда осталось 5 элементов до конца
-                if (visibleItemCount + firstVisibleItemPosition >= totalItemCount - 5) {
+                if (!isLoadingMore && visibleItemCount + firstVisibleItemPosition >= totalItemCount - 5) {
+                    isLoadingMore = true
                     viewModel.loadMoreProducts(currentSearchQuery)
+                    // Предзагружаем следующую страницу для еще большей скорости
+                    viewModel.preloadNextPage(currentSearchQuery)
+                    
+                    // Таймаут для сброса флага загрузки (на случай ошибки)
+                    android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                        if (isLoadingMore) {
+                            isLoadingMore = false
+                        }
+                    }, 10000) // 10 секунд таймаут
                 }
             }
         })
@@ -197,14 +299,19 @@ class Main : BaseActivity() {
         viewModel.products.observe(this) { resource ->
             when (resource) {
                 is Resource.Loading -> {
-                    showLoading(true)
+                    // Показываем основной прогресс только при первой загрузке
+                    if (!isLoadingMore) {
+                        showLoading(true)
+                    }
                     hideError()
                     hideEmpty()
                 }
                 is Resource.Success -> {
                     showLoading(false)
+                    isLoadingMore = false
                     hideError()
                     val products = resource.data ?: emptyList()
+                    
                     if (products.isEmpty()) {
                         showEmpty()
                     } else {
@@ -214,6 +321,7 @@ class Main : BaseActivity() {
                 }
                 is Resource.Error -> {
                     showLoading(false)
+                    isLoadingMore = false
                     showError(resource.message ?: "Неизвестная ошибка")
                     hideEmpty()
                 }
@@ -244,14 +352,54 @@ class Main : BaseActivity() {
     private fun hideEmpty() {
         emptyTextView.visibility = View.GONE
     }
-
-    override fun onCreateOptionsMenu(menu: Menu?): Boolean {
-        // Можно добавить меню, если нужно
-        return super.onCreateOptionsMenu(menu)
+    
+    /**
+     * Проверяет, является ли товар товаром из Яндекс.Маркета
+     */
+    private fun isYandexMarketProduct(product: Product): Boolean {
+        // Проверяем URL товара
+        val url = product.url
+        if (!url.isNullOrEmpty()) {
+            val urlLower = url.lowercase()
+            if (urlLower.contains("market.yandex.ru") || 
+                urlLower.contains("yandex.ru/product") ||
+                urlLower.contains("yandex.ru/catalog")) {
+                return true
+            }
+        }
+        
+        // Проверяем по магазину
+        val shopName = product.cheapestShop.lowercase()
+        if (shopName.contains("яндекс") || shopName.contains("yandex") || 
+            shopName.contains("маркет") || shopName.contains("market")) {
+            return true
+        }
+        
+        // Проверяем по наличию brand и model (товары из Яндекс.Маркета обычно имеют эти поля)
+        // и URL указывает на Яндекс.Маркет
+        val hasBrandAndModel = product.brand.isNotEmpty() && 
+                              product.brand != "Не указан" &&
+                              product.model.isNotEmpty() && 
+                              product.model != "Не указана"
+        
+        if (hasBrandAndModel) {
+            // Если есть brand и model, и URL содержит yandex или market, это товар из Яндекс.Маркета
+            if (!url.isNullOrEmpty()) {
+                val urlLower = url.lowercase()
+                if (urlLower.contains("yandex") || urlLower.contains("market")) {
+                    return true
+                }
+            }
+            // Если нет URL, но есть brand и model, и магазин не указан или содержит яндекс/маркет
+            if (shopName.isEmpty() || shopName == "не указан" || 
+                shopName.contains("яндекс") || shopName.contains("yandex") ||
+                shopName.contains("маркет") || shopName.contains("market")) {
+                return true
+            }
+        }
+        
+        return false
     }
 
-    override fun onOptionsItemSelected(item: MenuItem): Boolean {
-        return super.onOptionsItemSelected(item)
-    }
 }
 

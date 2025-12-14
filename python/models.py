@@ -17,10 +17,8 @@ class Product(Base):
 
     id_product = Column(Integer, primary_key=True, autoincrement=True)
     title = Column(String(255))
-    description = Column(Text)
-    brand = Column(String(255))
-    model = Column(String(255))
     image = Column(String(500))
+    price = Column(DECIMAL(12, 2), nullable=True)
 
     listings = relationship("Listing", back_populates="product", cascade="all, delete-orphan")
 

@@ -43,14 +43,15 @@ class TokenData(BaseModel):
 # Новые схемы для продуктов
 class ProductBase(BaseModel):
     title: Optional[str] = None
-    description: Optional[str] = None  # Added field
-    brand: Optional[str] = None
-    model: Optional[str] = None
     image: Optional[str] = None
+    price: Optional[float] = None
 
 
 class ProductResponse(ProductBase):
     id_product: int
+    brand: Optional[str] = None
+    model: Optional[str] = None
+    url: Optional[str] = None  # URL товара (для товаров из внешних источников)
 
     class Config:
         from_attributes = True

@@ -30,12 +30,14 @@ class ProductDetailActivity : AppCompatActivity() {
     private lateinit var minPriceTextView: TextView
     private lateinit var maxPriceTextView: TextView
     private lateinit var compareButton: Button
-    private lateinit var buyYandexButton: Button
+    private lateinit var buyButton: Button
     private lateinit var progressBar: ProgressBar
     private lateinit var errorTextView: TextView
 
     private var productId: Int = -1
-    private var yandexMarketUrl: String? = null
+    private var shopUrl: String? = null
+    private var shopName: String? = null
+    private var productData: ProductWithPricesResponse? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         // Применяем тему перед setContentView
@@ -75,32 +77,18 @@ class ProductDetailActivity : AppCompatActivity() {
     }
     
     private fun addToViewHistory() {
-        if (productId <= 0) {
-            Log.w("ProductDetail", "Invalid product ID, skipping view history")
-            return
-        }
+        if (productId <= 0) return
         
         val authManager = AuthManager.getInstance(this)
-        if (!authManager.isLoggedIn()) {
-            Log.d("ProductDetail", "User not logged in, skipping view history")
-            return
-        }
+        if (!authManager.isLoggedIn()) return
         
         // Используем CoroutineScope вместо lifecycleScope для совместимости с AppCompatActivity
         // Запускаем в фоне, не блокируя UI
         CoroutineScope(Dispatchers.IO).launch {
             try {
-                val response = RetrofitClient.apiService.addViewHistory(productId)
-                if (!response.isSuccessful) {
-                    // Логируем ошибку, но не крашим приложение
-                    val errorBody = response.errorBody()?.string()
-                    Log.e("ProductDetail", "Error adding to view history: ${response.code()}, message: ${response.message()}, body: $errorBody")
-                } else {
-                    Log.d("ProductDetail", "Product $productId added to view history successfully")
-                }
+                RetrofitClient.apiService.addViewHistory(productId)
             } catch (e: Exception) {
-                // Логируем ошибку, но не крашим приложение
-                Log.e("ProductDetail", "Error adding to view history", e)
+                // Silent fail
             }
         }
     }
@@ -113,7 +101,7 @@ class ProductDetailActivity : AppCompatActivity() {
         minPriceTextView = findViewById(R.id.ProductDetail_textView_minPrice)
         maxPriceTextView = findViewById(R.id.ProductDetail_textView_maxPrice)
         compareButton = findViewById(R.id.ProductDetail_button_compare)
-        buyYandexButton = findViewById(R.id.ProductDetail_button_buy_yandex)
+        buyButton = findViewById(R.id.ProductDetail_button_buy)
         progressBar = findViewById(R.id.ProductDetail_progressBar)
         errorTextView = findViewById(R.id.ProductDetail_textView_error)
     }
@@ -125,29 +113,51 @@ class ProductDetailActivity : AppCompatActivity() {
             startActivity(intent)
         }
         
-        // Функция для открытия ссылки на Яндекс.Маркет
-        val openYandexMarket = {
-            yandexMarketUrl?.let { url ->
-                try {
-                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
-                    startActivity(intent)
-                } catch (e: Exception) {
-                    Log.e("ProductDetail", "Ошибка открытия URL Яндекс.Маркет", e)
-                    Toast.makeText(this, getString(R.string.error_opening_url), Toast.LENGTH_SHORT).show()
+        // Функция для открытия поиска (fallback) - должна быть определена первой
+        val openSearchFallback = {
+            val currentProductData = productData
+            
+            if (currentProductData != null) {
+                val product = currentProductData.product
+                val searchQuery = product.title ?: "${product.brand} ${product.model}".trim()
+                
+                // Открываем поиск
+                Toast.makeText(this, "Поиск товара: $searchQuery", Toast.LENGTH_SHORT).show()
+            } else {
+                Toast.makeText(this, "Товар не найден", Toast.LENGTH_SHORT).show()
+            }
+        }
+        
+        // Функция для открытия ссылки на магазин
+        val openShopUrl = {
+            val currentShopUrl = shopUrl
+            val currentShopName = shopName
+            if (!currentShopUrl.isNullOrEmpty()) {
+                val normalizedUrl = normalizeUrl(currentShopUrl)
+                if (normalizedUrl != null && isValidProductUrl(normalizedUrl, currentShopName)) {
+                    try {
+                        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(normalizedUrl))
+                        startActivity(intent)
+                    } catch (e: Exception) {
+                        Toast.makeText(this, getString(R.string.error_opening_url), Toast.LENGTH_SHORT).show()
+                        openSearchFallback()
+                    }
+                } else {
+                    openSearchFallback()
                 }
-            } ?: run {
-                Toast.makeText(this, "Ссылка на Яндекс.Маркет недоступна", Toast.LENGTH_SHORT).show()
+            } else {
+                openSearchFallback()
             }
         }
         
         // Обработчик клика на кнопку
-        buyYandexButton.setOnClickListener {
-            openYandexMarket()
+        buyButton.setOnClickListener {
+            openShopUrl()
         }
         
         // Обработчик клика на картинку
         imageView.setOnClickListener {
-            openYandexMarket()
+            openShopUrl()
         }
     }
 
@@ -155,7 +165,6 @@ class ProductDetailActivity : AppCompatActivity() {
         // Проверяем кэш перед загрузкой с сервера
         val cachedProductData = ProductCache.getProductDetail(productId)
         if (cachedProductData != null) {
-            Log.d("ProductDetail", "Детальная информация о товаре $productId загружена из кэша")
             displayProduct(cachedProductData)
             addToViewHistory()
             return
@@ -166,6 +175,7 @@ class ProductDetailActivity : AppCompatActivity() {
 
         CoroutineScope(Dispatchers.IO).launch {
             try {
+                // Загружаем данные товара
                 val response: Response<ProductWithPricesResponse> = 
                     RetrofitClient.apiService.getProductByIdSuspend(productId)
 
@@ -175,22 +185,18 @@ class ProductDetailActivity : AppCompatActivity() {
                     if (response.isSuccessful) {
                         val productData = response.body()
                         if (productData != null) {
-                            // Сохраняем в кэш
+                            // Сохраняем в кэш и отображаем товар
                             ProductCache.putProductDetail(productId, productData)
-                            
                             displayProduct(productData)
-                            // Добавляем в историю просмотров только после успешной загрузки товара
-                            addToViewHistory()
+                            
+                            // Добавляем в историю просмотров асинхронно (не блокируем UI)
+                            CoroutineScope(Dispatchers.IO).launch {
+                                addToViewHistory()
+                            }
                         } else {
                             showError("Пустой ответ от сервера")
                         }
                     } else {
-                        val errorBody = try {
-                            response.errorBody()?.string()
-                        } catch (e: Exception) {
-                            null
-                        }
-                        Log.e("ProductDetail", "Error loading product: ${response.code()}, body: $errorBody")
                         showError("Ошибка загрузки: ${response.code()}")
                     }
                 }
@@ -204,6 +210,9 @@ class ProductDetailActivity : AppCompatActivity() {
     }
 
     private fun displayProduct(productData: ProductWithPricesResponse) {
+        // Сохраняем данные товара для использования в обработчиках
+        this.productData = productData
+        
         val product = productData.product
         val prices = productData.prices
 
@@ -248,28 +257,34 @@ class ProductDetailActivity : AppCompatActivity() {
             "Не указана"
         }
 
-        // Поиск URL Яндекс.Маркет
-        yandexMarketUrl = prices
-            .firstOrNull { price ->
-                price.shop_name.contains("Яндекс", ignoreCase = true) ||
-                price.shop_name.contains("Yandex", ignoreCase = true) ||
-                price.shop_name.contains("Маркет", ignoreCase = true) ||
-                price.shop_name.contains("Market", ignoreCase = true) ||
-                (price.url?.contains("market.yandex.ru", ignoreCase = true) == true)
-            }?.url
+        // Поиск URL магазина (приоритет: самая дешевая цена)
+        
+        // Находим самую дешевую цену и берем её URL
+        val cheapestPrice = prices.minByOrNull { it.price }
+        shopUrl = cheapestPrice?.url
+        shopName = cheapestPrice?.shop_name
+        
+        // Если URL нет у самой дешевой, берем первый доступный
+        if (shopUrl.isNullOrEmpty()) {
+            val firstAvailable = prices.firstOrNull { !it.url.isNullOrEmpty() }
+            shopUrl = firstAvailable?.url
+            shopName = firstAvailable?.shop_name
+        }
 
-        // Показываем кнопку "Купить в Яндекс.Маркет" только если есть URL
-        if (!yandexMarketUrl.isNullOrEmpty()) {
-            buyYandexButton.visibility = View.VISIBLE
-            buyYandexButton.isEnabled = true
-            // Делаем картинку кликабельной, если есть URL
+        // Показываем кнопку "Купить в магазине" только если есть URL
+        if (!shopUrl.isNullOrEmpty() && !shopName.isNullOrEmpty()) {
+            buyButton.visibility = View.VISIBLE
+            buyButton.isEnabled = true
+            val buttonShopName = shopName ?: "магазине"
+            buyButton.text = getString(R.string.button_buy_in_shop, buttonShopName)
             imageView.isClickable = true
             imageView.isFocusable = true
         } else {
-            buyYandexButton.visibility = View.GONE
-            // Делаем картинку некликабельной, если нет URL
-            imageView.isClickable = false
-            imageView.isFocusable = false
+            buyButton.visibility = View.VISIBLE
+            buyButton.isEnabled = true
+            buyButton.text = getString(R.string.find_in_shop, "магазине")
+            imageView.isClickable = true
+            imageView.isFocusable = true
         }
 
         // Кнопка сравнения
@@ -292,6 +307,70 @@ class ProductDetailActivity : AppCompatActivity() {
 
     private fun hideError() {
         errorTextView.visibility = View.GONE
+    }
+    
+    private fun normalizeUrl(url: String): String? {
+        if (url.isBlank()) return null
+        
+        val trimmedUrl = url.trim()
+        
+        val suspiciousPaths = listOf("/Common/", "/Error", "/404", "/NotFound", "/common/", "/error")
+        if (suspiciousPaths.any { trimmedUrl.contains(it, ignoreCase = true) }) {
+            return null
+        }
+        
+        if (trimmedUrl.startsWith("http://", ignoreCase = true) || 
+            trimmedUrl.startsWith("https://", ignoreCase = true)) {
+            if (suspiciousPaths.any { trimmedUrl.contains(it, ignoreCase = true) }) {
+                return null
+            }
+            return trimmedUrl
+        }
+        
+        if (trimmedUrl.startsWith("/")) {
+            val validPatterns = listOf("/p/", "/product/", "/products/", "/item/", "/goods/", "/catalog/", "/search")
+            if (validPatterns.any { trimmedUrl.contains(it, ignoreCase = true) } || 
+                trimmedUrl.matches(Regex("^/\\d+/?$"))) {
+                    return trimmedUrl
+            } else {
+                return null
+            }
+        }
+        
+        if (trimmedUrl.startsWith("http://") || trimmedUrl.startsWith("https://")) {
+                        if (suspiciousPaths.any { trimmedUrl.contains(it, ignoreCase = true) }) {
+                            return null
+                        }
+            return trimmedUrl
+                    }
+        
+        // В остальных случаях считаем невалидным
+        return null
+    }
+    
+       private fun isValidProductUrl(url: String, shopName: String? = null): Boolean {
+           if (url.isBlank()) return false
+
+               // Проверяем формат URL
+               if (!url.startsWith("http://") && !url.startsWith("https://")) {
+                   return false
+           }
+        
+        val suspiciousPaths = listOf("/Common/", "/Error", "/404", "/NotFound", "/common/", "/error")
+        if (suspiciousPaths.any { url.contains(it, ignoreCase = true) }) {
+            return false
+        }
+        
+        val validPatterns = listOf("/p/", "/product/", "/item/", "/goods/", "/catalog/", "/search")
+        val hasValidPattern = validPatterns.any { url.contains(it, ignoreCase = true) }
+        val isNumericPath = url.matches(Regex(".*/\\d+/?.*"))
+        val isRootOrSearch = url.endsWith("/") || url.contains("/search")
+        
+        if (!hasValidPattern && !isNumericPath && !isRootOrSearch) {
+            return false
+        }
+        
+        return true
     }
 }
 

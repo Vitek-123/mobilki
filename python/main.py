@@ -18,13 +18,14 @@ from models import (
     ViewHistory, Favorite, PriceAlert,
     ShoppingList, ShoppingListItem,
     Comparison, ComparisonProduct,
-    Review, Referral, Subscription
+    Review
 )
 import schemas
 from database import *
 
 # Импорт сервиса внешних данных
 from external_data_service import ExternalDataService
+from product_merger import merge_products_alternating
 
 # Загружаем переменные окружения
 load_dotenv()
@@ -46,7 +47,7 @@ try:
 except Exception as e:
     logging.warning(f"Не удалось подключиться к БД: {e}. Приложение будет работать, но функции, требующие БД, будут недоступны.")
 
-app = FastAPI(title="Mobil Api", version="0.9.3")
+app = FastAPI(title="Mobil Api", version="0.10.4")
 
 # Инициализация сервиса внешних данных
 # Redis можно отключить, установив REDIS_ENABLED=false в .env
@@ -162,8 +163,10 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
 # Разрешаем CORS (важно для мобильного приложения)
 from fastapi.middleware.cors import CORSMiddleware
 
-# Получаем разрешенные origins из переменных окружения
-cors_origins_str = os.getenv("CORS_ORIGINS", "http://localhost:8000,http://127.0.0.1:8000")
+# cors_origins_str = os.getenv("CORS_ORIGINS", "http://localhost:8000,http://172.20.10.2:8000,http://172.20.10.3:8000") #house
+# cors_origins_str = os.getenv("CORS_ORIGINS", "http://localhost:8000,http://127.0.0.1:8000") #iphone
+# cors_origins_str = os.getenv("CORS_ORIGINS", "http://localhost:8000,http://10.201.241.230:8000") #ranepa
+cors_origins_str = os.getenv("CORS_ORIGINS", "http://localhost:8000,http://192.168.0.16:8000") #houme
 cors_origins = [origin.strip() for origin in cors_origins_str.split(",")]
 
 app.add_middleware(
@@ -340,40 +343,179 @@ def get_products(
         limit: int = Query(50, ge=1, le=100),
         search: Optional[str] = Query(None, description="Поисковый запрос"),
         use_cache: bool = Query(True, description="Использовать кэш"),
+        db: Session = Depends(get_db)
 ):
     """
-    Поиск товаров во внешних источниках
+    Поиск товаров с чередованием
     Если search не указан, возвращает пустой результат
     """
     try:
         if not search:
             return schemas.ProductsResponse(products=[], total=0)
         
-        logging.info(f"Поиск товаров по запросу '{search}'")
+        logging.info("=" * 80)
+        logging.info(f"🔍 ПОИСК ТОВАРОВ ПО ЗАПРОСУ: '{search}'")
+        logging.info(f"   Параметры: skip={skip}, limit={limit}, use_cache={use_cache}")
+        logging.info("=" * 80)
         
-        # Получаем данные из внешних источников
-        aggregated_products = external_data_service.aggregate_by_product(
-            query=search,
-            use_cache=use_cache
+        # Получаем товары из внешнего источника
+        external_products = []
+        try:
+            logging.info(f"📡 Запрос к внешнему источнику данных (Яндекс.Маркет)...")
+            external_raw = external_data_service.aggregate_by_product(
+                query=search,
+                use_cache=use_cache
+            )
+            logging.info(f"✅ Получено {len(external_raw)} товаров из внешнего источника")
+            # Преобразуем в формат для merger
+            for item in external_raw:
+                external_products.append({
+                    "id_product": abs(hash(f"{item['brand']}_{item['model']}")) % 1000000,
+                    "title": item['title'],
+                    "brand": item['brand'],
+                    "model": item['model'],
+                    "description": item.get('description'),
+                    "image": item.get('image'),
+                    "prices": item['prices'],
+                    "min_price": item.get('min_price'),
+                    "max_price": item.get('max_price')
+                })
+        except Exception as e:
+            logging.error(f"Ошибка при получении товаров из внешнего источника: {e}")
+        
+        # Получаем товары из БД
+        db_products = []
+        try:
+            query = db.query(Product)
+            if search:
+                search_term = f"%{search.lower()}%"
+                query = query.filter(Product.title.ilike(search_term))
+            
+            products = query.limit(100).all()  # Берем больше для чередования
+            
+            for product in products:
+                listings = db.query(Listing).filter(Listing.product_id == product.id_product).all()
+                prices = []
+                prices_values = []
+                product_url = None  # URL товара из listings
+                
+                # Получаем URL из первого listing, если есть
+                if listings:
+                    product_url = listings[0].url
+                
+                for listing in listings:
+                    latest_price = db.query(Price).filter(
+                        Price.listing_id == listing.id_listing
+                    ).order_by(Price.scraped_at.desc()).first()
+                    
+                    if latest_price and listing.shop:
+                        prices.append({
+                            "price": float(latest_price.price),
+                            "shop_name": listing.shop.name,
+                            "url": listing.url,  # URL из таблицы listings
+                            "scraped_at": latest_price.scraped_at.isoformat()
+                        })
+                        prices_values.append(float(latest_price.price))
+                    elif listing.shop and listing.url:
+                        # Если нет цены в prices, но есть listing с URL, добавляем его
+                        # Это важно для товаров из БД, у которых может не быть записей в prices
+                        prices.append({
+                            "price": float(product.price) if product.price else 0.0,
+                            "shop_name": listing.shop.name,
+                            "url": listing.url,  # URL из таблицы listings
+                            "scraped_at": datetime.now().isoformat()
+                        })
+                        if product.price:
+                            prices_values.append(float(product.price))
+                
+                # Добавляем товар даже если нет цен в prices, используем price из products
+                # Если есть цены в prices, используем их, иначе используем price из products
+                if prices_values:
+                    # Есть цены в таблице prices
+                    product_price = min(prices_values)
+                    min_price = min(prices_values)
+                    max_price = max(prices_values)
+                elif product.price:
+                    # Нет цен в prices, но есть price в products
+                    product_price = float(product.price)
+                    min_price = product_price
+                    max_price = product_price
+                    # Создаем фиктивную цену для отображения, если еще не создана
+                    if not prices:
+                        # Используем магазин из listings, если есть
+                        shop_name = None
+                        if listings and listings[0].shop:
+                            shop_name = listings[0].shop.name
+                        else:
+                            # Если нет listings, ищем первый доступный магазин в БД
+                            first_shop = db.query(Shop).first()
+                            if first_shop:
+                                shop_name = first_shop.name
+                            else:
+                                shop_name = "Магазин"  # Дефолтное значение
+                        
+                        prices.append({
+                            "price": product_price,
+                            "shop_name": shop_name,
+                            "url": product_url if product_url else None,  # URL из listings
+                            "scraped_at": datetime.now().isoformat()
+                        })
+                else:
+                    # Нет ни цен в prices, ни price в products
+                    product_price = None
+                    min_price = None
+                    max_price = None
+                
+                # Добавляем товар в любом случае (даже без цен)
+                db_products.append({
+                    "id_product": product.id_product,
+                    "title": product.title,
+                    "brand": None,  # Поле удалено из БД
+                    "model": None,  # Поле удалено из БД
+                    "description": None,  # Поле удалено из БД
+                    "image": product.image,
+                    "price": product_price,
+                    "prices": prices,
+                    "min_price": min_price,
+                    "max_price": max_price
+                })
+        except Exception as e:
+            logging.error(f"Ошибка при получении товаров из БД: {e}")
+        
+        # Логируем количество товаров перед чередованием
+        logging.info(f"📦 Перед чередованием (поиск '{search}'): внешний источник={len(external_products)}, БД={len(db_products)}")
+        
+        # Объединяем товары с чередованием
+        merged_products = merge_products_alternating(
+            external_products=external_products,
+            db_products=db_products,
+            static_products=[]  # Статические товары уже в БД
         )
         
+        logging.info(f"🔄 После чередования: {len(merged_products)} товаров")
+        
         # Применяем пагинацию
-        total = len(aggregated_products)
-        paginated_products = aggregated_products[skip:skip + limit]
+        total = len(merged_products)
+        paginated_products = merged_products[skip:skip + limit]
+        
         
         # Преобразование в формат API
         products_with_prices = []
         for item in paginated_products:
-            # Генерируем ID на основе хеша бренда и модели
-            product_id = abs(hash(f"{item['brand']}_{item['model']}")) % 1000000
+            # Получаем URL из первой цены, если есть (для товаров из Яндекс.Маркет)
+            product_url = None
+            if item.get('prices') and len(item['prices']) > 0:
+                product_url = item['prices'][0].get('url')
             
             product_response = schemas.ProductResponse(
-                id_product=product_id,
+                id_product=item['id_product'],
                 title=item['title'],
-                brand=item['brand'],
-                model=item['model'],
+                brand=item.get('brand'),
+                model=item.get('model'),
                 image=item.get('image'),
-                description=item.get('description')
+                description=item.get('description'),
+                price=item.get('price'),
+                url=product_url  # URL товара для кнопки "Купить"
             )
             
             # Преобразование цен
@@ -381,10 +523,10 @@ def get_products(
             for price_data in item['prices']:
                 price_response = schemas.PriceResponse(
                     price=price_data['price'],
-                    scraped_at=datetime.fromisoformat(price_data['scraped_at']),
+                    scraped_at=datetime.fromisoformat(price_data['scraped_at']) if isinstance(price_data['scraped_at'], str) else price_data['scraped_at'],
                     shop_name=price_data['shop_name'],
-                    shop_id=abs(hash(price_data['shop_name'])) % 10000,  # Временный ID магазина
-                    url=price_data['url']
+                    shop_id=abs(hash(price_data['shop_name'])) % 10000,
+                    url=price_data.get('url')
                 )
                 price_responses.append(price_response)
             
@@ -396,49 +538,300 @@ def get_products(
             )
             products_with_prices.append(product_with_prices)
         
+        logging.info(f"Возвращено {len(products_with_prices)} товаров (внешний источник: {len(external_products)}, БД: {len(db_products)}, всего: {total})")
         return schemas.ProductsResponse(
             products=products_with_prices,
             total=total
         )
     except Exception as e:
-        logging.error(f"Ошибка при получении продуктов: {e}")
+        logging.error(f"Ошибка при получении продуктов: {e}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Ошибка при получении продуктов: {str(e)}"
         )
 
 
-@app.get("/products/popular-phones", response_model=schemas.ProductsResponse)
-def get_popular_phones(
-    limit: int = Query(3, ge=1, le=10, description="Количество популярных телефонов"),
-    use_cache: bool = Query(True, description="Использовать кэш")
+@app.get("/products/popular", response_model=schemas.ProductsResponse)
+def get_popular_products(
+    limit: int = Query(10, ge=1, le=50, description="Количество популярных товаров"),
+    use_cache: bool = Query(True, description="Использовать кэш"),
+    category: str = Query("электроника", description="Категория товаров"),
+    db: Session = Depends(get_db)
 ):
     """
-    Получение топ популярных телефонов
-    Возвращает 3 самых популярных телефона по умолчанию (mock данные)
+    Получение топ популярных товаров
     """
     try:
-        logging.info(f"Запрос популярных телефонов: limit={limit}, use_cache={use_cache}")
-        # Получаем популярные телефоны (mock данные)
-        phones = external_data_service.get_popular_phones(
-            limit=limit, 
-            use_cache=use_cache
+        logging.info("=" * 80)
+        logging.info(f"🔵 ПОЛУЧЕН ЗАПРОС на /products/popular")
+        logging.info(f"   Параметры: limit={limit}, category={category}, use_cache={use_cache}")
+        logging.info("=" * 80)
+        
+        # Получаем популярные товары с таймаутом
+        external_products = []
+        try:
+            import threading
+            import queue
+            
+            result_queue = queue.Queue()
+            exception_queue = queue.Queue()
+            
+            def fetch_external_products():
+                try:
+                    products = external_data_service.get_popular_products(
+                        limit=limit,
+                        use_cache=use_cache,
+                        category=category
+                    )
+                    result_queue.put(products)
+                except Exception as e:
+                    exception_queue.put(e)
+            
+            # Запускаем получение товаров в отдельном потоке
+            thread = threading.Thread(target=fetch_external_products, daemon=True)
+            thread.start()
+            thread.join(timeout=60)  # Увеличиваем таймаут до 60 секунд
+            
+            if thread.is_alive():
+                logging.warning("⏱️ Таймаут при получении товаров (60 сек). Товары не получены.")
+                products = []
+            elif not exception_queue.empty():
+                exception = exception_queue.get()
+                logging.error(f"❌ Исключение при получении товаров: {exception}", exc_info=exception)
+                products = []
+            elif not result_queue.empty():
+                products = result_queue.get()
+                logging.info(f"✅ Получено {len(products)} товаров")
+                
+                if not products:
+                    logging.warning("⚠️ Получен пустой список товаров")
+                
+                if products:
+                    logging.info(f"   Примеры товаров: {', '.join([p.get('title', 'Unknown')[:30] for p in products[:3]])}")
+                
+                # Преобразуем в формат для merger
+                logging.info(f"🔄 Обрабатываем {len(products)} товаров для добавления в список")
+                for item in products:
+                    try:
+                        # Товары из external_data_service.get_popular_products всегда имеют brand и model
+                        # Если они None, устанавливаем значения по умолчанию
+                        brand = item.get('brand')
+                        model = item.get('model')
+                        
+                        # Если brand или model отсутствуют (None), устанавливаем значения по умолчанию
+                        # Это товары из внешнего источника, поэтому они должны быть добавлены
+                        if brand is None:
+                            brand = "Не указан"
+                            logging.debug(f"⚠️ Товар без brand, устанавливаем 'Не указан': {item.get('title', 'Unknown')[:50]}")
+                        if model is None:
+                            model = "Не указана"
+                            logging.debug(f"⚠️ Товар без model, устанавливаем 'Не указана': {item.get('title', 'Unknown')[:50]}")
+                        
+                        # Добавляем товар из внешнего источника
+                        external_products.append({
+                            "id_product": abs(hash(f"{brand}_{model}_{item.get('title', '')}")) % 1000000,
+                            "title": item.get('title', 'Без названия'),
+                            "brand": brand,
+                            "model": model,
+                            "description": item.get('description'),
+                            "image": item.get('image'),
+                            "prices": item.get('prices', []),
+                            "min_price": item.get('min_price'),
+                            "max_price": item.get('max_price')
+                        })
+                        logging.info(f"✅ Добавлен товар: {item.get('title', 'Unknown')[:50]} (brand={brand}, model={model})")
+                    except Exception as e:
+                        logging.error(f"❌ Ошибка при обработке товара: {e}, товар: {item}", exc_info=True)
+                
+                logging.info(f"📊 Итого добавлено товаров: {len(external_products)}")
+                
+                # Если товаров нет, логируем предупреждение
+                if len(external_products) == 0:
+                    logging.warning("⚠️ Нет товаров из внешнего источника")
+            else:
+                logging.warning("⚠️ Не получено товаров (пустая очередь)")
+                products = []
+        except Exception as e:
+            logging.error(f"❌ Критическая ошибка при получении товаров: {e}", exc_info=True)
+        
+        # Финальная проверка: если товаров нет, логируем предупреждение
+        if len(external_products) == 0:
+            logging.warning("=" * 80)
+            logging.warning("⚠️ КРИТИЧЕСКОЕ ПРЕДУПРЕЖДЕНИЕ: Нет товаров из внешнего источника (Яндекс.Маркет)")
+            logging.warning("   Это означает, что:")
+            logging.warning("   1. Яндекс.Маркет API не настроен (YANDEX_OAUTH_TOKEN не установлен)")
+            logging.warning("   2. ИЛИ парсер Яндекс.Маркет не работает")
+            logging.warning("   3. ИЛИ произошла ошибка при загрузке товаров")
+            logging.warning("   На главном экране будут отображаться только товары из БД")
+            logging.warning("=" * 80)
+        
+        # Получаем товары из БД (включая статические)
+        db_products = []
+        try:
+            # Берем больше товаров из БД для чередования
+            db_limit = max(limit * 2, 20)  # Берем минимум 20 товаров из БД
+            products = db.query(Product).limit(db_limit).all()
+            logging.info(f"Загружено {len(products)} товаров из таблицы products для обработки")
+            
+            for product in products:
+                listings = db.query(Listing).filter(Listing.product_id == product.id_product).all()
+                prices = []
+                prices_values = []
+                product_url = None  # URL товара из listings
+                
+                # Получаем URL из первого listing, если есть
+                if listings:
+                    product_url = listings[0].url
+                
+                for listing in listings:
+                    latest_price = db.query(Price).filter(
+                        Price.listing_id == listing.id_listing
+                    ).order_by(Price.scraped_at.desc()).first()
+                    
+                    if latest_price and listing.shop:
+                        prices.append({
+                            "price": float(latest_price.price),
+                            "shop_name": listing.shop.name,
+                            "url": listing.url,
+                            "scraped_at": latest_price.scraped_at.isoformat()
+                        })
+                        prices_values.append(float(latest_price.price))
+                
+                # Добавляем товар даже если нет цен в prices, используем price из products
+                # Если есть цены в prices, используем их, иначе используем price из products
+                if prices_values:
+                    # Есть цены в таблице prices
+                    product_price = min(prices_values)
+                    min_price = min(prices_values)
+                    max_price = max(prices_values)
+                elif product.price:
+                    # Нет цен в prices, но есть price в products
+                    product_price = float(product.price)
+                    min_price = product_price
+                    max_price = product_price
+                    # Создаем фиктивную цену для отображения
+                    if not prices:
+                        # Используем магазин из listings, если есть
+                        shop_name = None
+                        if listings and listings[0].shop:
+                            shop_name = listings[0].shop.name
+                        else:
+                            # Если нет listings, ищем первый доступный магазин в БД
+                            first_shop = db.query(Shop).first()
+                            if first_shop:
+                                shop_name = first_shop.name
+                            else:
+                                shop_name = "Магазин"  # Дефолтное значение, если нет магазинов
+                        
+                        prices.append({
+                            "price": product_price,
+                            "shop_name": shop_name,
+                            "url": product_url if product_url else None,  # URL из listings, если есть
+                            "scraped_at": datetime.now().isoformat()
+                        })
+                else:
+                    # Нет ни цен в prices, ни price в products
+                    product_price = None
+                    min_price = None
+                    max_price = None
+                    # Но все равно создаем запись цены для отображения, если есть URL
+                    if not prices and product_url:
+                        # Используем магазин из listings, если есть
+                        shop_name = None
+                        if listings and listings[0].shop:
+                            shop_name = listings[0].shop.name
+                        else:
+                            # Если нет listings, ищем первый доступный магазин в БД
+                            first_shop = db.query(Shop).first()
+                            if first_shop:
+                                shop_name = first_shop.name
+                            else:
+                                shop_name = "Магазин"  # Дефолтное значение
+                        
+                        prices.append({
+                            "price": 0.0,  # Цена неизвестна
+                            "shop_name": shop_name,
+                            "url": product_url if product_url else None,  # URL из listings, если есть
+                            "scraped_at": datetime.now().isoformat()
+                        })
+                
+                # Добавляем товар в любом случае (даже без цен)
+                db_products.append({
+                    "id_product": product.id_product,
+                    "title": product.title,
+                    "brand": None,  # Поле удалено из БД
+                    "model": None,  # Поле удалено из БД
+                    "description": None,  # Поле удалено из БД
+                    "image": product.image,
+                    "price": product_price,
+                    "prices": prices,
+                    "min_price": min_price,
+                    "max_price": max_price,
+                    "url": product_url  # Добавляем URL товара
+                })
+            
+            logging.info(f"✅ Получено {len(db_products)} товаров из БД (из {len(products)} обработанных)")
+            if db_products:
+                logging.info(f"   Примеры товаров из БД: {', '.join([p['title'][:30] for p in db_products[:3]])}")
+        except Exception as e:
+            logging.error(f"Ошибка при получении товаров из БД: {e}")
+        
+        # Логируем количество товаров перед чередованием
+        logging.info(f"📦 Перед чередованием: внешний источник={len(external_products)}, БД={len(db_products)}")
+        if external_products:
+            logging.info(f"   ✅ Примеры товаров: {', '.join([p.get('title', 'Unknown')[:30] for p in external_products[:3]])}")
+            # Детальное логирование товаров
+            for i, p in enumerate(external_products[:3], 1):
+                logging.info(f"      {i}. {p.get('title', 'Unknown')[:50]} (brand={p.get('brand', 'None')}, model={p.get('model', 'None')})")
+        else:
+            logging.warning(f"   ⚠️ Нет товаров из внешнего источника!")
+        if db_products:
+            logging.info(f"   ✅ Примеры товаров из БД: {', '.join([p.get('title', 'Unknown')[:30] for p in db_products[:3]])}")
+        
+        # Объединяем товары с чередованием
+        merged_products = merge_products_alternating(
+            external_products=external_products,
+            db_products=db_products,
+            static_products=[]  # Статические товары уже в БД
         )
-        logging.info(f"Получено {len(phones)} телефонов из сервиса")
+        
+        logging.info(f"🔄 После чередования: {len(merged_products)} товаров")
+        
+        # Ограничиваем количество до limit
+        final_products = merged_products[:limit]
+        
+        # Логируем источники товаров в финальном списке
+        external_count = sum(1 for p in final_products if p.get('brand') is not None and p.get('brand') != "Не указан")
+        db_count = sum(1 for p in final_products if p.get('brand') is None or p.get('brand') == "Не указан")
+        logging.info(f"📊 Финальный список: {len(final_products)} товаров (внешний источник: {external_count}, БД: {db_count})")
+        
+        # Детальное логирование первых 5 товаров для отладки
+        if final_products:
+            logging.info("🔍 Первые 5 товаров в финальном списке:")
+            for i, p in enumerate(final_products[:5], 1):
+                brand = p.get('brand')
+                source = "Внешний источник" if (brand is not None and brand != "Не указан") else "БД"
+                logging.info(f"   {i}. [{source}] {p.get('title', 'Unknown')[:50]} (brand={brand}, model={p.get('model', 'None')})")
+        else:
+            logging.warning("⚠️ Финальный список товаров пуст!")
         
         # Преобразование в формат API
         products_with_prices = []
-        for item in phones:
-            # Генерируем ID на основе хеша бренда и модели
-            product_id = abs(hash(f"{item['brand']}_{item['model']}")) % 1000000
+        for item in final_products:
+            # Получаем URL из первой цены, если есть (для товаров из Яндекс.Маркет)
+            product_url = None
+            if item.get('prices') and len(item['prices']) > 0:
+                product_url = item['prices'][0].get('url')
             
             product_response = schemas.ProductResponse(
-                id_product=product_id,
+                id_product=item['id_product'],
                 title=item['title'],
-                brand=item['brand'],
-                model=item['model'],
+                brand=item.get('brand'),
+                model=item.get('model'),
                 image=item.get('image'),
-                description=item.get('description')
+                description=item.get('description'),
+                price=item.get('price'),
+                url=product_url  # URL товара для кнопки "Купить"
             )
             
             # Преобразование цен
@@ -446,10 +839,10 @@ def get_popular_phones(
             for price_data in item['prices']:
                 price_response = schemas.PriceResponse(
                     price=price_data['price'],
-                    scraped_at=datetime.fromisoformat(price_data['scraped_at']),
+                    scraped_at=datetime.fromisoformat(price_data['scraped_at']) if isinstance(price_data['scraped_at'], str) else price_data['scraped_at'],
                     shop_name=price_data['shop_name'],
                     shop_id=abs(hash(price_data['shop_name'])) % 10000,
-                    url=price_data['url']
+                    url=price_data.get('url')
                 )
                 price_responses.append(price_response)
             
@@ -461,89 +854,20 @@ def get_popular_phones(
             )
             products_with_prices.append(product_with_prices)
         
-        logging.info(f"Возвращаем {len(products_with_prices)} товаров клиенту")
+        # Подсчитываем источники в финальном списке
+        external_final = sum(1 for p in final_products if p.get('brand') is not None)
+        db_final = sum(1 for p in final_products if p.get('brand') is None)
+        logging.info(f"✅ Возвращаем {len(products_with_prices)} товаров клиенту (внешний источник: {external_final}, БД: {db_final})")
         return schemas.ProductsResponse(
             products=products_with_prices,
-            total=len(products_with_prices)
+            total=len(merged_products)
         )
     except Exception as e:
-        logging.error(f"Ошибка при получении популярных телефонов: {e}", exc_info=True)
+        logging.error(f"Ошибка при получении популярных товаров: {e}", exc_info=True)
         # Возвращаем пустой список вместо ошибки, чтобы приложение не падало
         return schemas.ProductsResponse(
             products=[],
             total=0
-        )
-
-
-@app.get("/products/{brand}/{model}", response_model=schemas.ProductWithPrices)
-def get_product(
-    brand: str,
-    model: str,
-    use_cache: bool = Query(True, description="Использовать кэш")
-):
-    """
-    Получение цен на конкретный товар по бренду и модели
-    """
-    try:
-        # Получаем цены из внешних источников
-        prices = external_data_service.get_product_prices(
-            brand=brand,
-            model=model,
-            use_cache=use_cache
-        )
-        
-        if not prices:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Товар {brand} {model} не найден"
-            )
-        
-        # Группировка по магазинам (берем минимальную цену для каждого магазина)
-        shop_prices = {}
-        for price_data in prices:
-            shop_name = price_data['shop_name']
-            if shop_name not in shop_prices or price_data['price'] < shop_prices[shop_name]['price']:
-                shop_prices[shop_name] = price_data
-        
-        # Создание объекта продукта
-        product_response = schemas.ProductResponse(
-            id_product=abs(hash(f"{brand}_{model}")) % 1000000,
-            title=f"{brand} {model}",
-            brand=brand,
-            model=model,
-            image=None,
-            description=None
-        )
-        
-        # Преобразование цен
-        price_responses = []
-        for shop_name, price_data in shop_prices.items():
-            price_response = schemas.PriceResponse(
-                price=price_data['price'],
-                scraped_at=datetime.fromisoformat(price_data['scraped_at']),
-                shop_name=shop_name,
-                shop_id=abs(hash(shop_name)) % 10000,
-                url=price_data['url']
-            )
-            price_responses.append(price_response)
-        
-        prices_values = [p.price for p in price_responses]
-        min_price = min(prices_values) if prices_values else None
-        max_price = max(prices_values) if prices_values else None
-        
-        return schemas.ProductWithPrices(
-            product=product_response,
-            prices=price_responses,
-            min_price=min_price,
-            max_price=max_price
-        )
-    except HTTPException:
-        raise
-    except Exception as e:
-        logging.error(f"Ошибка при получении продукта: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Ошибка при получении продукта: {str(e)}"
         )
 
 
@@ -1171,28 +1495,59 @@ def get_user_stats(
 # ==================== УПРАВЛЕНИЕ КЭШЕМ ====================
 
 
-@app.get("/external/cache/stats")
-def get_cache_stats():
-    """Получение статистики кэша"""
+@app.delete("/cache/clear-all")
+def clear_all_cache():
+    """
+    Полная очистка всего кэша приложения
+    
+    Очищает:
+    - Redis кэш (все ключи)
+    - Кэш товаров
+    - Кэш URL
+    """
     try:
-        stats = external_data_service.get_cache_stats()
-        return stats
+        import redis
+        
+        # Подключение к Redis
+        redis_client = None
+        if external_data_service.redis_enabled:
+            redis_client = external_data_service.redis_client
+        
+        if not redis_client:
+            return {
+                "message": "Redis не доступен",
+                "cleared_keys": 0
+            }
+        
+        # Подсчет ключей перед очисткой
+        all_keys = redis_client.keys("*")
+        keys_count = len(all_keys)
+        
+        # Очистка всех ключей
+        if all_keys:
+            deleted = 0
+            for key in all_keys:
+                try:
+                    redis_client.delete(key)
+                    deleted += 1
+                except Exception as e:
+                    logging.error(f"Ошибка при удалении ключа {key}: {e}")
+            
+            logging.info(f"✅ Полная очистка кэша: удалено {deleted} ключей")
+            return {
+                "message": "Весь кэш очищен",
+                "cleared_keys": deleted,
+                "total_keys_before": keys_count
+            }
+        else:
+            return {
+                "message": "Кэш уже пуст",
+                "cleared_keys": 0,
+                "total_keys_before": 0
+            }
+            
     except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Ошибка при получении статистики: {str(e)}"
-        )
-
-
-@app.delete("/external/cache/clear")
-def clear_cache(
-    pattern: str = Query("*", description="Паттерн для очистки кэша")
-):
-    """Очистка кэша"""
-    try:
-        external_data_service.clear_cache(pattern=pattern)
-        return {"message": f"Кэш очищен (паттерн: {pattern})"}
-    except Exception as e:
+        logging.error(f"Ошибка при полной очистке кэша: {e}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Ошибка при очистке кэша: {str(e)}"
